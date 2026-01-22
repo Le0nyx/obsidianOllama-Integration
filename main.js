@@ -1,5 +1,4 @@
 const { Plugin, Notice, ItemView, PluginSettingTab, Setting, TFolder, MarkdownRenderer } = require('obsidian');
-const { spawn } = require('child_process');
 
 // Constants
 const VIEW_TYPE_OLLAMA = 'ollama-side-view';
@@ -9,7 +8,6 @@ const DEFAULT_SETTINGS = {
     defaultModel: '---',
     temperature: 0.7,
     maxTokens: -1,
-    autoStart: false,
     chatHistoryPath: 'Ollama Chats/',
     includeNoteContext: true
 };
@@ -113,22 +111,17 @@ class OllamaSideView extends ItemView {
         this.statusElement = statusContainer.createDiv('ollama-status');
         this.updateStatusIndicator();
 
-        this.startStopButton = statusContainer.createEl('button', {
-            text: this.plugin.isOllamaRunning ? 'Stop Ollama' : 'Start Ollama',
-            cls: 'ollama-start-stop-button'
-        });
-        
-        this.startStopButton.addEventListener('click', async () => {
-            await this.plugin.toggleOllamaService();
-            this.updateUI();
-        });
-
         const modelContainer = controlsSection.createDiv('ollama-model-container');
         modelContainer.createSpan({ text: 'Model: ' });
         
         const modelSelect = modelContainer.createEl('select', { cls: 'ollama-model-select' });
         this.modelSelect = modelSelect;
         this.populateModelDropdown();
+        
+        // Track user's model selection
+        this.modelSelect.addEventListener('change', () => {
+            this.userSelectedModel = this.modelSelect.value;
+        });
 
         const refreshButton = modelContainer.createEl('button', {
             text: 'Refresh',
@@ -175,6 +168,9 @@ class OllamaSideView extends ItemView {
 
         this.updateUI();
         await this.refreshChatList();
+        
+        // Start automatic status checking every 2 seconds
+        this.startStatusChecking();
     }
 
     updateContextIndicator() {
@@ -194,6 +190,40 @@ class OllamaSideView extends ItemView {
                     cls: 'ollama-context-text ollama-context-none'
                 });
             }
+        }
+    }
+
+    startStatusChecking() {
+        // Check immediately
+        this.checkStatus();
+        
+        // Then check every 2 seconds
+        this.statusCheckInterval = window.setInterval(() => {
+            this.checkStatus();
+        }, 2000);
+    }
+
+    stopStatusChecking() {
+        if (this.statusCheckInterval) {
+            window.clearInterval(this.statusCheckInterval);
+            this.statusCheckInterval = null;
+        }
+    }
+
+    async checkStatus() {
+        const wasRunning = this.plugin.isOllamaRunning;
+        await this.plugin.checkOllamaStatus();
+        
+        // If status changed, update UI and refresh models
+        if (wasRunning !== this.plugin.isOllamaRunning) {
+            if (this.plugin.isOllamaRunning) {
+                await this.plugin.refreshAvailableModels();
+            }
+            this.updateUI();
+        } else if (this.plugin.isOllamaRunning) {
+            // If still running, just update models silently
+            await this.plugin.refreshAvailableModels();
+            this.populateModelDropdown();
         }
     }
 
@@ -281,6 +311,9 @@ class OllamaSideView extends ItemView {
         this.chatSearchInput.value = '';
         this.openInTabButton.style.display = 'none';
         this.updateContextIndicator();
+        
+        // Ensure scrolled to top for new chat
+        this.outputElement.scrollTop = 0;
         
         new Notice('New chat started');
     }
@@ -416,6 +449,9 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                 await this.renderMessage(msg.role, msg.content);
             }
             
+            // Scroll to bottom after loading all messages
+            this.outputElement.scrollTop = this.outputElement.scrollHeight;
+            
             this.currentChatFile = filePath;
             this.openInTabButton.style.display = 'inline-block';
             this.updateContextIndicator();
@@ -429,7 +465,6 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
     updateUI() {
         const isRunning = this.plugin.isOllamaRunning;
         
-        this.startStopButton.setText(isRunning ? 'Stop Ollama' : 'Start Ollama');
         this.updateStatusIndicator();
         
         this.inputElement.disabled = !isRunning;
@@ -457,6 +492,9 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
     }
 
     populateModelDropdown() {
+        // Remember current selection
+        const currentSelection = this.modelSelect.value || this.userSelectedModel;
+        
         this.modelSelect.empty();
         
         if (this.plugin.availableModels.length === 0) {
@@ -472,9 +510,11 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             option.text = model;
         });
 
-        const defaultModel = this.plugin.settings.defaultModel;
-        if (this.plugin.availableModels.includes(defaultModel)) {
-            this.modelSelect.value = defaultModel;
+        // Priority: user's selected model > current selection > default model > first available
+        const preferredModel = this.userSelectedModel || currentSelection || this.plugin.settings.defaultModel;
+        
+        if (preferredModel && this.plugin.availableModels.includes(preferredModel)) {
+            this.modelSelect.value = preferredModel;
         } else if (this.plugin.availableModels.length > 0) {
             this.modelSelect.value = this.plugin.availableModels[0];
         }
@@ -715,6 +755,9 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
     }
 
     async onClose() {
+        // Stop automatic status checking
+        this.stopStatusChecking();
+        
         // Cancel any pending requests
         if (this.abortController) {
             this.abortController.abort();
@@ -745,23 +788,18 @@ class OllamaSettingsTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Ollama Status')
-            .setDesc(this.plugin.isOllamaRunning ? '● Service is running' : '○ Service is stopped')
+            .setDesc(this.plugin.isOllamaRunning ? '● Service is running' : '○ Service is not detected')
             .addButton(button => {
-                button.setButtonText(this.plugin.isOllamaRunning ? 'Stop Service' : 'Start Service');
+                button.setButtonText('Check Status & Refresh Models');
                 button.onClick(async () => {
-                    await this.plugin.toggleOllamaService();
+                    await this.plugin.checkOllamaStatus();
+                    if (this.plugin.isOllamaRunning) {
+                        await this.plugin.refreshAvailableModels();
+                        new Notice('Ollama is running - models refreshed');
+                    } else {
+                        new Notice('Ollama is not running. Please start Ollama manually.');
+                    }
                     this.display();
-                });
-            });
-
-        new Setting(containerEl)
-            .setName('Auto-start Ollama')
-            .setDesc('Automatically check Ollama status on plugin startup')
-            .addToggle(toggle => {
-                toggle.setValue(this.plugin.settings.autoStart);
-                toggle.onChange(async (value) => {
-                    this.plugin.settings.autoStart = value;
-                    await this.plugin.saveSettings();
                 });
             });
 
@@ -862,7 +900,6 @@ class OllamaPlugin extends Plugin {
         this.currentChatId = null;
         this.abortController = null;
         this.refreshIntervalId = null;
-        this.ollamaProcess = null;
     }
 
     async onload() {
@@ -871,9 +908,8 @@ class OllamaPlugin extends Plugin {
         // Ensure chat history folder exists
         await this.ensureChatHistoryFolder();
 
-        if (this.settings.autoStart) {
-            await this.checkOllamaStatus();
-        }
+        // Check Ollama status on startup
+        await this.checkOllamaStatus();
 
         this.registerView(
             VIEW_TYPE_OLLAMA,
@@ -893,10 +929,16 @@ class OllamaPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: 'toggle-ollama-service',
-            name: 'Start/Stop Ollama Service',
-            callback: () => {
-                this.toggleOllamaService();
+            id: 'check-ollama-status',
+            name: 'Check Ollama Status & Refresh Models',
+            callback: async () => {
+                await this.checkOllamaStatus();
+                if (this.isOllamaRunning) {
+                    await this.refreshAvailableModels();
+                    new Notice('Ollama is running - models refreshed');
+                } else {
+                    new Notice('Ollama is not running. Please start Ollama manually.');
+                }
             }
         });
 
@@ -917,26 +959,6 @@ class OllamaPlugin extends Plugin {
         }
         if (this.refreshIntervalId) {
             window.clearInterval(this.refreshIntervalId);
-        }
-        // Kill Ollama process if we started it
-        if (this.ollamaProcess) {
-            this.killOllamaProcess();
-        }
-    }
-
-    killOllamaProcess() {
-        if (this.ollamaProcess) {
-            try {
-                // On Windows, we need to kill the process tree
-                if (process.platform === 'win32') {
-                    spawn('taskkill', ['/pid', this.ollamaProcess.pid.toString(), '/f', '/t']);
-                } else {
-                    this.ollamaProcess.kill('SIGTERM');
-                }
-            } catch (e) {
-                console.error('Failed to kill Ollama process:', e);
-            }
-            this.ollamaProcess = null;
         }
     }
 
@@ -974,114 +996,10 @@ class OllamaPlugin extends Plugin {
 
         workspace.revealLeaf(leaf);
         
+        // Check status and refresh models when opening view
+        await this.checkOllamaStatus();
         if (this.isOllamaRunning) {
             await this.refreshAvailableModels();
-        }
-    }
-
-    async toggleOllamaService() {
-        if (this.isOllamaRunning) {
-            await this.stopOllamaService();
-        } else {
-            await this.startOllamaService();
-        }
-    }
-
-    async startOllamaService() {
-        try {
-            // First check if Ollama is already running
-            await this.checkOllamaStatus();
-            
-            if (this.isOllamaRunning) {
-                new Notice('Ollama service is already running');
-                await this.refreshAvailableModels();
-                return true;
-            }
-            
-            // Try to start Ollama
-            new Notice('Starting Ollama service...');
-            
-            try {
-                // Spawn ollama serve command
-                const ollamaCmd = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
-                
-                this.ollamaProcess = spawn(ollamaCmd, ['serve'], {
-                    detached: false,
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    shell: true
-                });
-                
-                this.ollamaProcess.on('error', (err) => {
-                    console.error('Failed to start Ollama:', err);
-                    new Notice('Failed to start Ollama. Make sure it is installed and in your PATH.');
-                    this.ollamaProcess = null;
-                });
-                
-                this.ollamaProcess.on('exit', (code) => {
-                    if (code !== 0 && code !== null) {
-                        console.log('Ollama process exited with code:', code);
-                    }
-                    this.ollamaProcess = null;
-                    this.isOllamaRunning = false;
-                });
-                
-                // Wait a moment for Ollama to start up
-                await this.waitForOllama(10, 500);
-                
-                if (this.isOllamaRunning) {
-                    new Notice('Ollama service started successfully');
-                    await this.refreshAvailableModels();
-                    return true;
-                } else {
-                    new Notice('Ollama started but not responding. Please check the installation.');
-                    return false;
-                }
-            } catch (spawnError) {
-                // If spawn fails, Ollama might already be running as a system service
-                await this.checkOllamaStatus();
-                if (this.isOllamaRunning) {
-                    new Notice('Ollama service is running');
-                    await this.refreshAvailableModels();
-                    return true;
-                }
-                throw spawnError;
-            }
-        } catch (error) {
-            console.error('Failed to start Ollama service:', error);
-            new Notice('Failed to start Ollama service. Please ensure Ollama is installed.');
-            return false;
-        }
-    }
-
-    async waitForOllama(maxAttempts, delayMs) {
-        for (let i = 0; i < maxAttempts; i++) {
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            const isRunning = await this.checkOllamaStatus();
-            if (isRunning) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    async stopOllamaService() {
-        try {
-            // If we started the process, kill it
-            if (this.ollamaProcess) {
-                this.killOllamaProcess();
-                new Notice('Ollama service stopped');
-            } else {
-                // We didn't start it, just disconnect
-                new Notice('Disconnected from Ollama service');
-            }
-            
-            this.isOllamaRunning = false;
-            this.availableModels = [];
-            return true;
-        } catch (error) {
-            console.error('Failed to stop Ollama service:', error);
-            new Notice('Failed to stop Ollama service');
-            return false;
         }
     }
 
@@ -1106,7 +1024,9 @@ class OllamaPlugin extends Plugin {
             const response = await fetch(`${this.settings.ollamaUrl}/api/tags`);
             if (response.ok) {
                 const data = await response.json();
-                this.availableModels = data.models.map(model => model.name);
+                this.availableModels = data.models ? data.models.map(model => model.name) : [];
+            } else {
+                this.availableModels = [];
             }
         } catch (error) {
             console.error('Failed to fetch models:', error);
