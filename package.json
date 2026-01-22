@@ -1,0 +1,9 @@
+{
+    "name": "obsidian-ollama-sidechat",
+    "version": "1.0.0",
+    "description": "Ollama chat integration for Obsidian",
+    "main": "main.js",
+    "scripts": {
+        "dev": "echo 'JavaScript plugin - no build required'"
+    }
+}
