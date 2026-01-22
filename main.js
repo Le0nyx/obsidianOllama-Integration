@@ -78,6 +78,25 @@ class OllamaSideView extends ItemView {
             this.filterChatList(this.chatSearchInput.value);
         });
         
+        // Open in new tab button
+        this.openInTabButton = headerRight.createEl('button', {
+            text: '↗',
+            cls: 'ollama-open-tab-button',
+            attr: { 'aria-label': 'Open in New Tab', 'title': 'Open current chat in new tab' }
+        });
+        this.openInTabButton.style.display = 'none';
+        this.openInTabButton.addEventListener('click', async () => {
+            if (this.currentChatFile) {
+                const file = this.app.vault.getAbstractFileByPath(this.currentChatFile);
+                if (file) {
+                    const leaf = this.app.workspace.getLeaf('tab');
+                    await leaf.openFile(file);
+                } else {
+                    new Notice('Chat file not found');
+                }
+            }
+        });
+        
         // New chat button
         const newChatButton = headerRight.createEl('button', {
             text: '+',
@@ -231,28 +250,11 @@ class OllamaSideView extends ItemView {
             const item = this.chatListContainer.createDiv({
                 cls: 'ollama-chat-item'
             });
-            
-            const nameSpan = item.createSpan({ text: file.name, cls: 'ollama-chat-name' });
-            nameSpan.addEventListener('click', () => {
+            item.createSpan({ text: file.name });
+            item.addEventListener('click', () => {
                 this.loadChat(file.path);
                 this.chatSearchInput.value = file.name;
                 this.chatListContainer.style.display = 'none';
-            });
-            
-            // Add 'open in new tab' button
-            const openButton = item.createEl('button', {
-                text: '↗',
-                cls: 'ollama-chat-open-button',
-                attr: { 'aria-label': 'Open in new tab', 'title': 'Open in new tab' }
-            });
-            openButton.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const fileToOpen = this.app.vault.getAbstractFileByPath(file.path);
-                if (fileToOpen) {
-                    await this.app.workspace.getLeaf('tab').openFile(fileToOpen);
-                } else {
-                    new Notice('Chat file not found');
-                }
             });
         }
     }
@@ -277,6 +279,7 @@ class OllamaSideView extends ItemView {
         this.contextNotePath = null;
         this.outputElement.empty();
         this.chatSearchInput.value = '';
+        this.openInTabButton.style.display = 'none';
         this.updateContextIndicator();
         
         new Notice('New chat started');
@@ -362,6 +365,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         } else {
             await this.app.vault.create(filePath, content);
             this.currentChatFile = filePath;
+            this.openInTabButton.style.display = 'inline-block';
         }
         
         await this.refreshChatList();
@@ -413,6 +417,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             }
             
             this.currentChatFile = filePath;
+            this.openInTabButton.style.display = 'inline-block';
             this.updateContextIndicator();
             
             new Notice(`Loaded chat: ${file.basename}`);
@@ -495,8 +500,18 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
 
         // Create placeholder for streaming response
         const responseDiv = this.outputElement.createDiv('ollama-message ollama-assistant');
-        const roleSpan = responseDiv.createSpan({ text: 'Ollama: ' });
+        
+        const headerDiv = responseDiv.createDiv('ollama-message-header');
+        const roleSpan = headerDiv.createSpan({ text: 'Ollama: ' });
         roleSpan.addClass('ollama-role');
+        
+        // Add copy button for streaming response
+        const copyButton = headerDiv.createEl('button', {
+            text: '📋',
+            cls: 'ollama-copy-button',
+            attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
+        });
+        
         const contentSpan = responseDiv.createSpan({ text: '' });
         contentSpan.addClass('ollama-content');
 
@@ -504,6 +519,15 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             const selectedModel = this.modelSelect.value || this.plugin.settings.defaultModel;
             const response = await this.callOllamaStreaming(message, selectedModel, contentSpan);
             this.messages.push({ role: 'assistant', content: response });
+            
+            // Setup copy button handler after response is complete
+            copyButton.addEventListener('click', async () => {
+                await navigator.clipboard.writeText(response);
+                copyButton.setText('✓');
+                setTimeout(() => {
+                    copyButton.setText('📋');
+                }, 1500);
+            });
             
             // Auto-save after each exchange
             await this.saveCurrentChat();
@@ -618,8 +642,24 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
 
     renderMessage(role, content) {
         const messageDiv = this.outputElement.createDiv(`ollama-message ollama-${role}`);
-        const roleSpan = messageDiv.createSpan({ text: role === 'user' ? 'You: ' : 'Ollama: ' });
+        
+        const headerDiv = messageDiv.createDiv('ollama-message-header');
+        const roleSpan = headerDiv.createSpan({ text: role === 'user' ? 'You: ' : 'Ollama: ' });
         roleSpan.addClass('ollama-role');
+        
+        // Add copy button
+        const copyButton = headerDiv.createEl('button', {
+            text: '📋',
+            cls: 'ollama-copy-button',
+            attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
+        });
+        copyButton.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(content);
+            copyButton.setText('✓');
+            setTimeout(() => {
+                copyButton.setText('📋');
+            }, 1500);
+        });
         
         const contentSpan = messageDiv.createSpan({ text: content });
         contentSpan.addClass('ollama-content');

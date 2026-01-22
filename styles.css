@@ -60,47 +60,12 @@
 
 .ollama-chat-item {
     padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    cursor: pointer;
     font-size: 0.85em;
     border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.ollama-chat-name {
-    flex: 1;
-    cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.ollama-chat-name:hover {
-    color: var(--interactive-accent);
-}
-
-.ollama-chat-open-button {
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--background-modifier-border);
-    color: var(--text-normal);
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.9em;
-    opacity: 0.7;
-}
-
-.ollama-chat-open-button:hover {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    opacity: 1;
 }
 
 .ollama-chat-item:last-child {
@@ -139,6 +104,27 @@
 
 .ollama-new-chat-button:hover {
     opacity: 0.9;
+}
+
+/* Open in new tab button */
+.ollama-open-tab-button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1em;
+    background: var(--background-modifier-border);
+    color: var(--text-normal);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.ollama-open-tab-button:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
 }
 
 /* Context indicator */
@@ -250,9 +236,43 @@
     border-left: 3px solid var(--text-accent);
 }
 
+.ollama-message-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
 .ollama-role {
     font-weight: bold;
     margin-right: 5px;
+}
+
+.ollama-copy-button {
+    padding: 2px 6px;
+    font-size: 0.9em;
+    background: var(--background-modifier-border);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.ollama-copy-button:hover {
+    opacity: 1;
+    background: var(--interactive-accent);
+}
+
+.ollama-content {
+    display: block;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    user-select: text;
+    cursor: text;
+    font-family: var(--font-text);
+    line-height: 1.6;
 }
 
 .ollama-input-container {
