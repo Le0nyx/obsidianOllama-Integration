@@ -507,7 +507,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         
         // Add copy button for streaming response
         const copyButton = headerDiv.createEl('button', {
-            text: '📋',
+            text: 'copy',
             cls: 'ollama-copy-button',
             attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
         });
