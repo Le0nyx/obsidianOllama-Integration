@@ -6,9 +6,121 @@
 }
 
 .ollama-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     border-bottom: 1px solid var(--background-modifier-border);
     margin-bottom: 10px;
     padding-bottom: 10px;
+}
+
+.ollama-header-left h3 {
+    margin: 0;
+}
+
+.ollama-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Chat selector dropdown */
+.ollama-chat-selector-container {
+    position: relative;
+}
+
+.ollama-chat-search {
+    width: 140px;
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    font-size: 0.85em;
+}
+
+.ollama-chat-search:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.ollama-chat-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    min-width: 200px;
+}
+
+.ollama-chat-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85em;
+    border-bottom: 1px solid var(--background-modifier-border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ollama-chat-item:last-child {
+    border-bottom: none;
+}
+
+.ollama-chat-item:hover {
+    background: var(--background-secondary);
+}
+
+.ollama-chat-item-empty {
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.ollama-chat-item-empty:hover {
+    background: transparent;
+}
+
+/* New chat button */
+.ollama-new-chat-button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em;
+    font-weight: bold;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.ollama-new-chat-button:hover {
+    opacity: 0.9;
+}
+
+/* Context indicator */
+.ollama-context-indicator {
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.ollama-context-text {
+    color: var(--text-normal);
+}
+
+.ollama-context-none {
+    color: var(--text-muted);
 }
 
 .ollama-controls-section {
@@ -110,7 +222,6 @@
 
 .ollama-input-container {
     display: flex;
-    gap: 10px;
 }
 
 .ollama-textarea {
@@ -124,21 +235,6 @@
 }
 
 .ollama-textarea:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.ollama-send-button {
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-    border-radius: 3px;
-    padding: 8px 16px;
-    cursor: pointer;
-    align-self: flex-end;
-}
-
-.ollama-send-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
