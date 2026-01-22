@@ -1,4 +1,4 @@
-const { Plugin, Notice, ItemView, PluginSettingTab, Setting, TFolder } = require('obsidian');
+const { Plugin, Notice, ItemView, PluginSettingTab, Setting, TFolder, MarkdownRenderer } = require('obsidian');
 const { spawn } = require('child_process');
 
 // Constants
@@ -413,7 +413,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             // Render messages
             this.outputElement.empty();
             for (const msg of this.messages) {
-                this.renderMessage(msg.role, msg.content);
+                await this.renderMessage(msg.role, msg.content);
             }
             
             this.currentChatFile = filePath;
@@ -493,7 +493,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         this.updateContextIndicator();
 
         this.messages.push({ role: 'user', content: message });
-        this.renderMessage('user', message);
+        await this.renderMessage('user', message);
         this.inputElement.value = '';
         this.inputElement.disabled = true;
         this.interruptButton.style.display = 'inline-block';
@@ -512,12 +512,11 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
         });
         
-        const contentSpan = responseDiv.createSpan({ text: '' });
-        contentSpan.addClass('ollama-content');
+        const contentDiv = responseDiv.createDiv('ollama-content');
 
         try {
             const selectedModel = this.modelSelect.value || this.plugin.settings.defaultModel;
-            const response = await this.callOllamaStreaming(message, selectedModel, contentSpan);
+            const response = await this.callOllamaStreaming(message, selectedModel, contentDiv);
             this.messages.push({ role: 'assistant', content: response });
             
             // Setup copy button handler after response is complete
@@ -533,16 +532,22 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             await this.saveCurrentChat();
         } catch (error) {
             if (error.name !== 'AbortError') {
-                contentSpan.setText(`Error: ${error.message}`);
+                contentDiv.setText(`Error: ${error.message}`);
                 this.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
             } else {
                 // Generation was interrupted
-                const partialResponse = contentSpan.getText();
+                const partialResponse = contentDiv.textContent || '';
                 if (partialResponse) {
                     this.messages.push({ role: 'assistant', content: partialResponse + '\n\n[Generation interrupted]' });
-                    contentSpan.setText(partialResponse + '\n\n[Generation interrupted]');
+                    contentDiv.empty();
+                    await MarkdownRenderer.renderMarkdown(
+                        partialResponse + '\n\n[Generation interrupted]',
+                        contentDiv,
+                        '',
+                        this
+                    );
                 } else {
-                    contentSpan.setText('[Generation interrupted]');
+                    contentDiv.setText('[Generation interrupted]');
                 }
                 new Notice('Generation interrupted');
             }
@@ -553,7 +558,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         }
     }
 
-    async callOllamaStreaming(prompt, model, contentSpan) {
+    async callOllamaStreaming(prompt, model, contentDiv) {
         const ollamaUrl = this.plugin.settings.ollamaUrl;
         
         // Build prompt with context
@@ -596,6 +601,8 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
+        let lastRenderTime = 0;
+        const renderInterval = 100; // Render every 100ms for smooth updates
 
         while (true) {
             const { done, value } = await reader.read();
@@ -609,14 +616,36 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                     const json = JSON.parse(line);
                     if (json.response) {
                         fullResponse += json.response;
-                        contentSpan.setText(fullResponse);
-                        this.outputElement.scrollTop = this.outputElement.scrollHeight;
+                        
+                        // Throttle markdown rendering for performance
+                        const now = Date.now();
+                        if (now - lastRenderTime > renderInterval) {
+                            contentDiv.empty();
+                            await MarkdownRenderer.renderMarkdown(
+                                fullResponse,
+                                contentDiv,
+                                '',
+                                this
+                            );
+                            this.outputElement.scrollTop = this.outputElement.scrollHeight;
+                            lastRenderTime = now;
+                        }
                     }
                 } catch (e) {
                     // Skip malformed JSON lines
                 }
             }
         }
+
+        // Final render to ensure complete markdown
+        contentDiv.empty();
+        await MarkdownRenderer.renderMarkdown(
+            fullResponse,
+            contentDiv,
+            '',
+            this
+        );
+        this.outputElement.scrollTop = this.outputElement.scrollHeight;
 
         this.abortController = null;
         return fullResponse;
@@ -640,7 +669,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         return userPrompt;
     }
 
-    renderMessage(role, content) {
+    async renderMessage(role, content) {
         const messageDiv = this.outputElement.createDiv(`ollama-message ollama-${role}`);
         
         const headerDiv = messageDiv.createDiv('ollama-message-header');
@@ -661,8 +690,19 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             }, 1500);
         });
         
-        const contentSpan = messageDiv.createSpan({ text: content });
-        contentSpan.addClass('ollama-content');
+        const contentDiv = messageDiv.createDiv('ollama-content');
+        
+        // Render markdown for assistant messages, plain text for user messages
+        if (role === 'assistant') {
+            await MarkdownRenderer.renderMarkdown(
+                content,
+                contentDiv,
+                '',
+                this
+            );
+        } else {
+            contentDiv.setText(content);
+        }
         
         this.outputElement.scrollTop = this.outputElement.scrollHeight;
     }
