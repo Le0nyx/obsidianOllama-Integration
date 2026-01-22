@@ -525,7 +525,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                 await navigator.clipboard.writeText(response);
                 copyButton.setText('✓');
                 setTimeout(() => {
-                    copyButton.setText('📋');
+                    copyButton.setText('copy');
                 }, 1500);
             });
             
@@ -649,7 +649,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         
         // Add copy button
         const copyButton = headerDiv.createEl('button', {
-            text: '📋',
+            text: 'copy',
             cls: 'ollama-copy-button',
             attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
         });
@@ -657,7 +657,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             await navigator.clipboard.writeText(content);
             copyButton.setText('✓');
             setTimeout(() => {
-                copyButton.setText('📋');
+                copyButton.setText('copy');
             }, 1500);
         });
         
@@ -744,7 +744,7 @@ class OllamaSettingsTab extends PluginSettingTab {
             .setName('Default Model')
             .setDesc('Default model to use for chat')
             .addText(text => {
-                text.setPlaceholder('llama3.1')
+                text.setPlaceholder(' --- ')
                     .setValue(this.plugin.settings.defaultModel)
                     .onChange(async (value) => {
                         this.plugin.settings.defaultModel = value;
