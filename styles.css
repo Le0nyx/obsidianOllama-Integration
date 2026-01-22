@@ -1,0 +1,144 @@
+.ollama-side-container {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.ollama-header {
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+}
+
+.ollama-controls-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: var(--background-secondary);
+    border-radius: 5px;
+}
+
+.ollama-status-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ollama-status {
+    font-weight: bold;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+}
+
+.ollama-status-running {
+    background-color: var(--color-green);
+    color: white;
+}
+
+.ollama-status-stopped {
+    background-color: var(--color-red);
+    color: white;
+}
+
+.ollama-start-stop-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 3px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.ollama-model-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ollama-model-select {
+    flex-grow: 1;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 3px;
+    padding: 4px 8px;
+}
+
+.ollama-refresh-button {
+    background: var(--background-modifier-border);
+    border: none;
+    border-radius: 3px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 0.8em;
+}
+
+.ollama-output {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    padding: 10px;
+    max-height: 60vh;
+}
+
+.ollama-message {
+    margin-bottom: 10px;
+    padding: 8px;
+    border-radius: 5px;
+}
+
+.ollama-message.ollama-user {
+    background-color: var(--background-primary);
+    border-left: 3px solid var(--interactive-accent);
+}
+
+.ollama-message.ollama-assistant {
+    background-color: var(--background-secondary);
+    border-left: 3px solid var(--text-accent);
+}
+
+.ollama-role {
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.ollama-input-container {
+    display: flex;
+    gap: 10px;
+}
+
+.ollama-textarea {
+    flex-grow: 1;
+    resize: vertical;
+    font-family: inherit;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 3px;
+    padding: 8px;
+}
+
+.ollama-textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.ollama-send-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 3px;
+    padding: 8px 16px;
+    cursor: pointer;
+    align-self: flex-end;
+}
+
+.ollama-send-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
