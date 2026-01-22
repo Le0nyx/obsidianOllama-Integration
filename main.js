@@ -6,7 +6,7 @@ const VIEW_TYPE_OLLAMA = 'ollama-side-view';
 
 const DEFAULT_SETTINGS = {
     ollamaUrl: 'http://localhost:11434',
-    defaultModel: 'llama3.1:8b',
+    defaultModel: '---',
     temperature: 0.7,
     maxTokens: -1,
     autoStart: false,
@@ -143,6 +143,17 @@ class OllamaSideView extends ItemView {
             }
         });
 
+        // Add interrupt button
+        this.interruptButton = inputContainer.createEl('button', {
+            text: 'Interrupt',
+            cls: 'ollama-interrupt-button',
+            attr: { 'aria-label': 'Interrupt generation', 'title': 'Stop generation' }
+        });
+        this.interruptButton.style.display = 'none';
+        this.interruptButton.addEventListener('click', () => {
+            this.interruptGeneration();
+        });
+
         this.updateUI();
         await this.refreshChatList();
     }
@@ -220,11 +231,28 @@ class OllamaSideView extends ItemView {
             const item = this.chatListContainer.createDiv({
                 cls: 'ollama-chat-item'
             });
-            item.createSpan({ text: file.name });
-            item.addEventListener('click', () => {
+            
+            const nameSpan = item.createSpan({ text: file.name, cls: 'ollama-chat-name' });
+            nameSpan.addEventListener('click', () => {
                 this.loadChat(file.path);
                 this.chatSearchInput.value = file.name;
                 this.chatListContainer.style.display = 'none';
+            });
+            
+            // Add 'open in new tab' button
+            const openButton = item.createEl('button', {
+                text: '↗',
+                cls: 'ollama-chat-open-button',
+                attr: { 'aria-label': 'Open in new tab', 'title': 'Open in new tab' }
+            });
+            openButton.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const fileToOpen = this.app.vault.getAbstractFileByPath(file.path);
+                if (fileToOpen) {
+                    await this.app.workspace.getLeaf('tab').openFile(fileToOpen);
+                } else {
+                    new Notice('Chat file not found');
+                }
             });
         }
     }
@@ -463,6 +491,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         this.renderMessage('user', message);
         this.inputElement.value = '';
         this.inputElement.disabled = true;
+        this.interruptButton.style.display = 'inline-block';
 
         // Create placeholder for streaming response
         const responseDiv = this.outputElement.createDiv('ollama-message ollama-assistant');
@@ -482,9 +511,20 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             if (error.name !== 'AbortError') {
                 contentSpan.setText(`Error: ${error.message}`);
                 this.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
+            } else {
+                // Generation was interrupted
+                const partialResponse = contentSpan.getText();
+                if (partialResponse) {
+                    this.messages.push({ role: 'assistant', content: partialResponse + '\n\n[Generation interrupted]' });
+                    contentSpan.setText(partialResponse + '\n\n[Generation interrupted]');
+                } else {
+                    contentSpan.setText('[Generation interrupted]');
+                }
+                new Notice('Generation interrupted');
             }
         } finally {
             this.inputElement.disabled = false;
+            this.interruptButton.style.display = 'none';
             this.inputElement.focus();
         }
     }
@@ -585,6 +625,13 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         contentSpan.addClass('ollama-content');
         
         this.outputElement.scrollTop = this.outputElement.scrollHeight;
+    }
+
+    interruptGeneration() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
     }
 
     async onClose() {
