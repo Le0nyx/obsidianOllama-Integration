@@ -9,7 +9,8 @@ const DEFAULT_SETTINGS = {
     temperature: 0.7,
     maxTokens: -1,
     chatHistoryPath: 'Ollama Chats/',
-    includeNoteContext: true
+    includeNoteContext: true,
+    customInstructions: ''
 };
 
 // OllamaSideView class
@@ -692,21 +693,29 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
     }
 
     async buildPrompt(userPrompt) {
-        if (!this.plugin.settings.includeNoteContext) {
-            return userPrompt;
+        let fullPrompt = '';
+        
+        // Add custom instructions if provided
+        if (this.plugin.settings.customInstructions && this.plugin.settings.customInstructions.trim()) {
+            fullPrompt += this.plugin.settings.customInstructions.trim() + '\n\n';
         }
         
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile && activeFile.extension === 'md') {
-            try {
-                const content = await this.app.vault.read(activeFile);
-                this.contextNotePath = activeFile.path;
-                return `Context from note "${activeFile.basename}":\n\n${content}\n\n---\n\nUser question: ${userPrompt}`;
-            } catch (e) {
-                // Failed to read file, continue without context
+        // Add note context if enabled
+        if (this.plugin.settings.includeNoteContext) {
+            const activeFile = this.app.workspace.getActiveFile();
+            if (activeFile && activeFile.extension === 'md') {
+                try {
+                    const content = await this.app.vault.read(activeFile);
+                    this.contextNotePath = activeFile.path;
+                    fullPrompt += `Context from note "${activeFile.basename}":\n\n${content}\n\n---\n\n`;
+                } catch (e) {
+                    // Failed to read file, continue without context
+                }
             }
         }
-        return userPrompt;
+        
+        fullPrompt += userPrompt;
+        return fullPrompt;
     }
 
     async renderMessage(role, content) {
@@ -854,6 +863,20 @@ class OllamaSettingsTab extends PluginSettingTab {
                         this.plugin.settings.maxTokens = isNaN(parsed) ? -1 : parsed;
                         await this.plugin.saveSettings();
                     });
+            });
+
+        new Setting(containerEl)
+            .setName('Custom Instructions')
+            .setDesc('Custom instructions that will be added to the beginning of every prompt (e.g., "You are a helpful assistant...")')
+            .addTextArea(text => {
+                text.setPlaceholder('Enter custom instructions here...')
+                    .setValue(this.plugin.settings.customInstructions)
+                    .onChange(async (value) => {
+                        this.plugin.settings.customInstructions = value;
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.rows = 4;
+                text.inputEl.cols = 50;
             });
 
         // Chat History section
