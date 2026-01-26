@@ -5,7 +5,7 @@
     "minAppVersion": "0.15.0",
     "description": "Chat with your local Ollama instance in a side window",
     "author": "Leonyx",
-    "authorUrl": "",
+    "authorUrl": "https://github.com/Le0nyx",
     "fundingUrl": "",
     "isDesktopOnly": false
 }
