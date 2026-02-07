@@ -25,6 +25,9 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 3. Type your message and press **Enter** to send
 4. Use **Shift+Enter** for multi-line input
 
+
+![Ollama Sidechat in Obsidian](./assets/sidechat.png)
+
 ## Settings
 
 | Setting | Description |
@@ -35,6 +38,11 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 | **Max Tokens** | Token limit per response (-1 = unlimited) |
 | **Chat History Folder** | Where to save chat files |
 | **Include Note Context** | Send active note as context |
+
+
+![Settings Page1](./assets/settings1.png)
+
+![Settings Page2](./assets/settings2.png)
 
 ## Chat History
 
