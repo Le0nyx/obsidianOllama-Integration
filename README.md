@@ -5,7 +5,6 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 ## Features
 
 - 💬 **Side Panel Chat** — Chat with Ollama without leaving your notes
-- 🚀 **Auto-Start Ollama** — Starts Ollama service automatically if not running
 - 📝 **Note Context** — Automatically includes active note content as context
 - 💾 **Chat History** — Saves conversations as searchable markdown files
 - ⚡ **Streaming Responses** — See responses as they're generated
@@ -21,7 +20,7 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 ## Usage
 
 1. Click the brain icon in the ribbon (or run command "Open Ollama Chat")
-2. Click "Start Ollama" if the service isn't running
+2. Start Ollama on your machine (if using it locally)
 3. Type your message and press **Enter** to send
 4. Use **Shift+Enter** for multi-line input
 
