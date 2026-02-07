@@ -38,9 +38,9 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 | **Chat History Folder** | Where to save chat files |
 | **Include Note Context** | Send active note as context |
 
-<img src="./assets/settings1.png" alt="Settings Page 1" width="400"/>
+<img src="./assets/settings1.png" alt="Settings Page 1" width="500"/>
 
-<img src="./assets/settings2.png" alt="Settings Page 2" width="400"/>
+<img src="./assets/settings2.png" alt="Settings Page 2" width="500"/>
 
 ## Chat History
 
