@@ -591,6 +591,7 @@
 /* User message content */
 .ollama-message.ollama-user .ollama-content {
     color: var(--oc-text);
+    grid-column: 1 / 2;
 }
 
 .ollama-message.ollama-user .ollama-content code {

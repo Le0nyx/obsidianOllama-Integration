@@ -34,7 +34,8 @@ const DEFAULT_SETTINGS = {
     enableChatMemory: true,
     chatMemoryMaxChars: 3000,
     chatMemoryRecentTurns: 4,
-    chatMemorySummaryTemperature: 0.2
+    chatMemorySummaryTemperature: 0.2,
+    vaultStructure: ''
 };
 
 // OllamaSideView class
@@ -866,7 +867,12 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
 
         // Add vault browsing context if enabled
         if (this.plugin.settings.enableVaultBrowse) {
-            const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt);
+            // Pass recentTurnsContext to vault browse to improve search tokens
+            let recentTurnsContext = '';
+            if (this.plugin.settings.enableChatMemory) {
+                recentTurnsContext = this.buildRecentTurnsContext(userPrompt);
+            }
+            const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext);
             if (vaultContext) {
                 contextBlock += `[VAULT CONTEXT (Related Files)]\n${vaultContext}\n[END OF VAULT CONTEXT]\n\n`;
             }
@@ -879,7 +885,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         return userPrompt;
     }
 
-    async buildVaultBrowseContext(activeFile, activeContent, userPrompt) {
+    async buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext = '') {
         const contextParts = [];
         const excludedPaths = new Set();
 
@@ -899,6 +905,10 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             const rootLabel = basePath ? basePath : 'vault root';
             const fileList = relativeFiles.map(file => `- ${file.path}`).join('\n');
             contextParts.push(`Relative files in ${rootLabel}:\n${fileList}`);
+        }
+
+        if (this.plugin.settings.vaultStructure && this.plugin.settings.vaultStructure.trim()) {
+            contextParts.push(`Vault Structure Overview:\n${this.plugin.settings.vaultStructure.trim()}`);
         }
 
         const linkedFiles = this.extractLinkedFiles(activeFile, activeContent)
@@ -925,6 +935,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
 
         const tokenSource = [
             userPrompt || '',
+            recentTurnsContext || '',
             activeContent ? activeContent.substring(0, VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS) : ''
         ].join(' ');
 
@@ -994,22 +1005,58 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             return content;
         }
 
-        const lowerContent = content.toLowerCase();
-        let bestIndex = -1;
-
-        for (const token of searchTokens) {
-            const index = lowerContent.indexOf(token);
-            if (index !== -1 && (bestIndex === -1 || index < bestIndex)) {
-                bestIndex = index;
-            }
-        }
-
-        if (bestIndex === -1) {
+        const windowSize = VAULT_BROWSE_MAX_FILE_CHARS;
+        if (content.length <= windowSize) {
             return content;
         }
 
-        const windowSize = VAULT_BROWSE_MAX_FILE_CHARS;
-        const start = Math.max(0, bestIndex - Math.floor(windowSize * 0.25));
+        // Sliding window to find max density of search tokens
+        let bestStart = 0;
+        let maxScore = -1;
+        
+        // Convert tokens to regexes
+        const regexes = searchTokens.map(t => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'));
+        
+        // Find all matches
+        const matches = [];
+        for (let i = 0; i < regexes.length; i++) {
+            const regex = regexes[i];
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                matches.push({ index: match.index, tokenIndex: i });
+            }
+        }
+        
+        if (matches.length === 0) {
+            return content.substring(0, windowSize) + '\n...[truncated]';
+        }
+        
+        // Sort matches by index
+        matches.sort((a, b) => a.index - b.index);
+        
+        // Slide a window of `windowSize` over the matches
+        for (let i = 0; i < matches.length; i++) {
+            const windowStart = Math.max(0, matches[i].index - Math.floor(windowSize * 0.1));
+            const windowEnd = windowStart + windowSize;
+            
+            const seenTokens = new Set();
+            let totalHits = 0;
+            
+            for (let j = i; j < matches.length; j++) {
+                if (matches[j].index > windowEnd) break;
+                seenTokens.add(matches[j].tokenIndex);
+                totalHits += 1;
+            }
+            
+            const score = seenTokens.size * 10 + totalHits;
+            
+            if (score > maxScore) {
+                maxScore = score;
+                bestStart = windowStart;
+            }
+        }
+
+        const start = bestStart;
         const end = Math.min(content.length, start + windowSize);
         let excerpt = content.substring(start, end);
 
@@ -1018,7 +1065,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         }
 
         if (end < content.length) {
-            excerpt += '\n...';
+            excerpt += '\n...[truncated]';
         }
 
         return excerpt;
@@ -1045,7 +1092,27 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     findRelatedFiles(activeFile, searchTokens, excludedPaths) {
         if (!searchTokens || searchTokens.length === 0) return [];
 
-        const files = this.app.vault.getMarkdownFiles();
+        let files = [...this.app.vault.getMarkdownFiles()];
+        let priorityPaths = [];
+        
+        if (this.plugin.settings.vaultStructure) {
+            const structureLines = this.plugin.settings.vaultStructure.split('\n');
+            priorityPaths = structureLines
+                .filter(line => line.trim().startsWith('- ') || line.trim().startsWith('* '))
+                .map(line => line.replace(/^[-*]\s+/, '').split(' ')[0].trim())
+                .filter(p => p.length > 0 && p !== 'Root');
+            
+            if (priorityPaths.length > 0) {
+                files.sort((a, b) => {
+                    const aIsPriority = priorityPaths.some(p => a.path.startsWith(p));
+                    const bIsPriority = priorityPaths.some(p => b.path.startsWith(p));
+                    if (aIsPriority && !bIsPriority) return -1;
+                    if (!aIsPriority && bIsPriority) return 1;
+                    return 0;
+                });
+            }
+        }
+
         const scored = [];
         let scanned = 0;
 
@@ -1062,8 +1129,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             if (scanned > VAULT_BROWSE_MAX_RELATED_SCAN) break;
 
             const cache = this.app.metadataCache.getFileCache(file);
-            const metaText = this.buildMetadataText(file, cache);
-            const score = this.scoreText(searchTokens, metaText);
+            const score = this.scoreFile(file, cache, searchTokens, priorityPaths);
 
             if (score >= VAULT_BROWSE_RELATED_MIN_SCORE) {
                 scored.push({ file, score });
@@ -1076,22 +1142,48 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         return scored.slice(0, VAULT_BROWSE_MAX_RELATED_FILES).map(item => item.file);
     }
 
-    buildMetadataText(file, cache) {
-        const parts = [file.basename, file.path];
-
-        if (cache?.headings?.length) {
-            parts.push(cache.headings.map(heading => heading.heading).join(' '));
+    scoreFile(file, cache, tokens, structurePaths) {
+        if (!tokens || tokens.length === 0) return 0;
+        let score = 0;
+        
+        const lowerPath = file.path.toLowerCase();
+        const lowerName = file.basename.toLowerCase();
+        
+        if (structurePaths && structurePaths.length > 0) {
+            if (structurePaths.some(p => file.path.startsWith(p))) {
+                score += 2;
+            }
         }
 
-        if (cache?.tags?.length) {
-            parts.push(cache.tags.map(tag => tag.tag).join(' '));
+        for (const token of tokens) {
+            const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+            
+            if (regex.test(lowerName)) {
+                score += 5;
+            } else if (regex.test(lowerPath)) {
+                score += 3;
+            }
+            
+            let metaHit = false;
+            if (cache?.headings) {
+                for (const h of cache.headings) {
+                    if (regex.test(h.heading)) { score += 3; metaHit = true; }
+                }
+            }
+            if (cache?.tags) {
+                for (const t of cache.tags) {
+                    if (regex.test(t.tag)) { score += 3; metaHit = true; }
+                }
+            }
+            
+            if (!metaHit && cache?.frontmatter) {
+                const fmText = this.flattenFrontmatter(cache.frontmatter);
+                if (regex.test(fmText)) { score += 1; }
+            }
         }
 
-        if (cache?.frontmatter) {
-            parts.push(this.flattenFrontmatter(cache.frontmatter));
-        }
-
-        return parts.join(' ');
+        return score;
     }
 
     flattenFrontmatter(value) {
@@ -1112,20 +1204,6 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
 
         collect(value);
         return parts.join(' ');
-    }
-
-    scoreText(tokens, text) {
-        if (!tokens || tokens.length === 0 || !text) return 0;
-        const lowerText = text.toLowerCase();
-        let score = 0;
-
-        for (const token of tokens) {
-            if (lowerText.includes(token)) {
-                score += 1;
-            }
-        }
-
-        return score;
     }
 
     extractLinkedFiles(activeFile, activeContent) {
@@ -1610,6 +1688,61 @@ class OllamaSettingsTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.chatMemorySummaryTemperature = value;
                         await this.plugin.saveSettings();
+                    });
+            });
+
+        // Vault Structure section
+        containerEl.createEl('h3', { text: 'Vault Structure' });
+        
+        new Setting(containerEl)
+            .setName('Vault Structure Overview')
+            .setDesc('A general map of where things are located. Helps the AI understand your vault organization.')
+            .addTextArea(text => {
+                text.setPlaceholder('e.g.,\n- Work/ : Work related notes\n- Personal/ : Journal and ideas')
+                    .setValue(this.plugin.settings.vaultStructure)
+                    .onChange(async (value) => {
+                        this.plugin.settings.vaultStructure = value;
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.rows = 8;
+                text.inputEl.cols = 50;
+            });
+            
+        new Setting(containerEl)
+            .setName('Auto-Generate Vault Structure')
+            .setDesc('Scan your vault to automatically generate a basic structure overview. This will replace the text above.')
+            .addButton(button => {
+                button.setButtonText('Generate Structure')
+                    .onClick(async () => {
+                        const allFiles = this.app.vault.getMarkdownFiles();
+                        const folderCounts = {};
+                        
+                        for (const file of allFiles) {
+                            let parent = file.parent;
+                            let rootPath = '';
+                            if (parent && parent.path !== '/') {
+                                const parts = parent.path.split('/');
+                                rootPath = parts[0] + '/';
+                            } else {
+                                rootPath = 'Root (/)';
+                            }
+                            folderCounts[rootPath] = (folderCounts[rootPath] || 0) + 1;
+                        }
+                        
+                        const sortedFolders = Object.entries(folderCounts)
+                            .sort((a, b) => b[1] - a[1]);
+                            
+                        let structure = 'General Vault Structure:\n';
+                        for (const [folder, count] of sortedFolders) {
+                            if (count > 0) {
+                                structure += `- ${folder} (Contains ~${count} notes)\n`;
+                            }
+                        }
+                        
+                        this.plugin.settings.vaultStructure = structure;
+                        await this.plugin.saveSettings();
+                        new Notice('Vault structure generated!');
+                        this.display();
                     });
             });
     }
