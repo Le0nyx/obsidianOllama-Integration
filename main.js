@@ -1048,14 +1048,12 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     }
 
     shouldIncludeDailyNotes(userPrompt, recentTurnsContext, aiSearchQueries = []) {
-        const combined = [userPrompt || '', recentTurnsContext || '', aiSearchQueries.join(' ')].join(' ').toLowerCase();
-        return (
-            combined.includes('daily note') ||
-            combined.includes('daily recap') ||
-            combined.includes('journal') ||
-            combined.includes('today') ||
-            combined.includes('yesterday')
-        );
+        const combined = [userPrompt || '', recentTurnsContext || '', aiSearchQueries.join(' ')].join(' ');
+        const lowerCombined = combined.toLowerCase();
+        if (lowerCombined.includes('daily note') || lowerCombined.includes('daily recap') || lowerCombined.includes('journal')) {
+            return true;
+        }
+        return this.getDateCandidatesFromText(combined).length > 0;
     }
 
     findDailyNoteCandidates(searchTokens, activeFile, excludedPaths) {
@@ -1101,7 +1099,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         const dateMatches = [];
         const patterns = [
             /^\d{4}[-_.]\d{2}[-_.]\d{2}$/,
-            /^\d{2}[-.]\d{2}[-.]\d{4}$/,
+            /^\d{2}[-_.]\d{2}[-_.]\d{4}$/,
             /^\d{8}$/
         ];
 
@@ -1112,6 +1110,125 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         }
 
         return dateMatches;
+    }
+
+    formatDateKey(dateObj) {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    addDays(baseDate, offsetDays) {
+        const dateObj = new Date(baseDate);
+        dateObj.setDate(dateObj.getDate() + offsetDays);
+        return dateObj;
+    }
+
+    createDateFromParts(year, month, day) {
+        const y = parseInt(year, 10);
+        const m = parseInt(month, 10);
+        const d = parseInt(day, 10);
+
+        if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+        if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+
+        const dateObj = new Date(y, m - 1, d);
+        if (dateObj.getFullYear() !== y || dateObj.getMonth() !== m - 1 || dateObj.getDate() !== d) {
+            return null;
+        }
+
+        return dateObj;
+    }
+
+    getWeekdayIndex(token) {
+        const lowerToken = token.toLowerCase();
+        if (lowerToken.startsWith('sun')) return 0;
+        if (lowerToken.startsWith('mon')) return 1;
+        if (lowerToken.startsWith('tue')) return 2;
+        if (lowerToken.startsWith('wed')) return 3;
+        if (lowerToken.startsWith('thu')) return 4;
+        if (lowerToken.startsWith('fri')) return 5;
+        if (lowerToken.startsWith('sat')) return 6;
+        return null;
+    }
+
+    resolveRelativeWeekday(baseDate, targetWeekday, qualifier) {
+        const currentWeekday = baseDate.getDay();
+        let diff = targetWeekday - currentWeekday;
+
+        if (qualifier === 'this') {
+            if (diff < 0) diff += 7;
+        } else if (qualifier === 'next') {
+            if (diff <= 0) diff += 7;
+        } else if (qualifier === 'last') {
+            if (diff >= 0) diff -= 7;
+        } else {
+            if (diff > 0) diff -= 7;
+        }
+
+        return this.addDays(baseDate, diff);
+    }
+
+    getDateCandidatesFromText(sourceText) {
+        if (!sourceText || !sourceText.trim()) return [];
+
+        const lowerSource = sourceText.toLowerCase();
+        const now = new Date();
+        const candidates = [];
+        const seen = new Set();
+
+        const addDate = (dateObj) => {
+            if (!dateObj || Number.isNaN(dateObj.getTime())) return;
+            const key = this.formatDateKey(dateObj);
+            if (seen.has(key)) return;
+            seen.add(key);
+            candidates.push(dateObj);
+        };
+
+        if (lowerSource.includes('today') || lowerSource.includes('daily note') || lowerSource.includes('daily recap')) {
+            addDate(new Date(now));
+        }
+        if (lowerSource.includes('yesterday')) {
+            addDate(this.addDays(now, -1));
+        }
+        if (lowerSource.includes('tomorrow')) {
+            addDate(this.addDays(now, 1));
+        }
+        if (lowerSource.includes('day before yesterday')) {
+            addDate(this.addDays(now, -2));
+        }
+        if (lowerSource.includes('day after tomorrow')) {
+            addDate(this.addDays(now, 2));
+        }
+
+        const weekdayRegex = /\b(?:(last|this|next)\s+)?(sun(?:day)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday|s(?:day)?)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?)\b/g;
+        let weekdayMatch;
+        while ((weekdayMatch = weekdayRegex.exec(lowerSource)) !== null) {
+            const qualifier = weekdayMatch[1] || '';
+            const weekdayToken = weekdayMatch[2];
+            const weekdayIndex = this.getWeekdayIndex(weekdayToken);
+            if (weekdayIndex === null) continue;
+            addDate(this.resolveRelativeWeekday(now, weekdayIndex, qualifier));
+        }
+
+        const ymdRegex = /\b(\d{4})[-_./](\d{2})[-_./](\d{2})\b/g;
+        for (const match of sourceText.matchAll(ymdRegex)) {
+            addDate(this.createDateFromParts(match[1], match[2], match[3]));
+        }
+
+        const dmyRegex = /\b(\d{2})[-_./](\d{2})[-_./](\d{4})\b/g;
+        for (const match of sourceText.matchAll(dmyRegex)) {
+            addDate(this.createDateFromParts(match[3], match[2], match[1]));
+        }
+
+        const compactRegex = /\b(\d{8})\b/g;
+        for (const match of sourceText.matchAll(compactRegex)) {
+            const raw = match[1];
+            addDate(this.createDateFromParts(raw.substring(0, 4), raw.substring(4, 6), raw.substring(6, 8)));
+        }
+
+        return candidates;
     }
 
     appendSearchTokens(targetTokens, sourceText) {
@@ -1256,7 +1373,6 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         const seen = new Set();
         
         // Smart Date Injection for daily notes
-        const now = new Date();
         const injectDateFormats = (dateObj) => {
             const y = dateObj.getFullYear();
             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -1266,6 +1382,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
                 `${d}-${m}-${y}`, `${d}.${m}.${y}`, `${y}.${m}.${d}`
             ];
             for (const format of formats) {
+                if (tokens.length >= VAULT_BROWSE_MAX_TOKENS) break;
                 if (!seen.has(format)) {
                     seen.add(format);
                     tokens.push(format);
@@ -1273,13 +1390,9 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             }
         };
 
-        if (lowerSource.includes('today') || lowerSource.includes('daily note') || lowerSource.includes('daily recap')) {
-            injectDateFormats(now);
-        }
-        if (lowerSource.includes('yesterday')) {
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            injectDateFormats(yesterday);
+        const dateCandidates = this.getDateCandidatesFromText(sourceText);
+        for (const dateObj of dateCandidates) {
+            injectDateFormats(dateObj);
         }
 
         for (const word of matches) {
