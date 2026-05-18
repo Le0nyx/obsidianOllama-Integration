@@ -7,6 +7,8 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 - 💬 **Side Panel Chat** — Chat with Ollama without leaving your notes
 - 🚀 **Auto-Start Ollama** — Starts Ollama service automatically if not running
 - 📝 **Note Context** — Automatically includes active note content as context
+- 🔎 **Vault Browse** — Pulls relative file lists plus linked and related note excerpts
+- 🧠 **Chat Memory** — Keeps a rolling summary and recent turns for better recall
 - 💾 **Chat History** — Saves conversations as searchable markdown files
 - ⚡ **Streaming Responses** — See responses as they're generated
 - 🔄 **Model Switching** — Switch between available models on the fly
@@ -24,6 +26,8 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 2. Click "Start Ollama" if the service isn't running
 3. Type your message and press **Enter** to send
 4. Use **Shift+Enter** for multi-line input
+5. Toggle **Vault Browse** to include related notes automatically
+6. Enable **Chat Memory** to keep a rolling summary per chat
 
 
 ![Ollama Sidechat in Obsidian](./assets/sidechat.png)
@@ -38,6 +42,14 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 | **Max Tokens** | Token limit per response (-1 = unlimited) |
 | **Chat History Folder** | Where to save chat files |
 | **Include Note Context** | Send active note as context |
+| **Enable Vault Browsing** | Include relative file listings, linked notes, and related note excerpts |
+| **Enable Chat Memory** | Keep a rolling summary and recent turns for the current chat |
+| **Memory Summary Size** | Max characters for the rolling summary |
+| **Recent Turns in Prompt** | How many recent turns to include |
+| **Memory Summary Temperature** | Controls summary stability (lower = more stable) |
+
+When Vault Browse is enabled, the plugin scans note metadata and excerpts to find related notes even if they are not explicitly linked.
+Chat Memory stores the rolling summary as a hidden block inside each chat file so it can be reloaded later.
 
 
 ![Settings Page1](./assets/settings1.png)

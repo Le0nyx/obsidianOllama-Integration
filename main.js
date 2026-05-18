@@ -3,6 +3,25 @@ const { Plugin, Notice, ItemView, PluginSettingTab, Setting, TFolder, MarkdownRe
 // Constants
 const VIEW_TYPE_OLLAMA = 'ollama-side-view';
 
+const VAULT_BROWSE_MAX_FILES = 40;
+const VAULT_BROWSE_MAX_LINKED_FILES = 5;
+const VAULT_BROWSE_MAX_RELATED_FILES = 5;
+const VAULT_BROWSE_MAX_RELATED_SCAN = 400;
+const VAULT_BROWSE_MAX_FILE_CHARS = 2000;
+const VAULT_BROWSE_MAX_TOTAL_CHARS = 8000;
+const VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS = 4000;
+const VAULT_BROWSE_MAX_TOKENS = 30;
+const VAULT_BROWSE_RELATED_MIN_SCORE = 1;
+const VAULT_BROWSE_STOPWORDS = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'about', 'your', 'you', 'are', 'was', 'were',
+    'not', 'but', 'can', 'could', 'should', 'would', 'have', 'has', 'had', 'will', 'what', 'when', 'where', 'who',
+    'how', 'why', 'its', 'our', 'their', 'them', 'they', 'then', 'than', 'too', 'also', 'just', 'like', 'some',
+    'more', 'most', 'less', 'very', 'only', 'over', 'under', 'such', 'each', 'all', 'any'
+]);
+
+const CHAT_MEMORY_BLOCK_REGEX = /<!--\s*ollama-memory:start[\s\S]*?ollama-memory:end\s*-->/i;
+const CHAT_MEMORY_MAX_MESSAGE_CHARS = 2000;
+
 const DEFAULT_SETTINGS = {
     ollamaUrl: 'http://localhost:11434',
     defaultModel: '---',
@@ -10,7 +29,12 @@ const DEFAULT_SETTINGS = {
     maxTokens: -1,
     chatHistoryPath: 'Ollama Chats/',
     includeNoteContext: true,
-    customInstructions: ''
+    customInstructions: '',
+    enableVaultBrowse: false,
+    enableChatMemory: true,
+    chatMemoryMaxChars: 3000,
+    chatMemoryRecentTurns: 4,
+    chatMemorySummaryTemperature: 0.2
 };
 
 // OllamaSideView class
@@ -23,6 +47,7 @@ class OllamaSideView extends ItemView {
         this.contextNotePath = null;
         this.chatFiles = [];
         this.abortController = null;
+        this.chatMemorySummary = '';
     }
 
     getViewType() {
@@ -134,6 +159,21 @@ class OllamaSideView extends ItemView {
             new Notice('Models refreshed');
         });
 
+        const vaultBrowseContainer = controlsSection.createDiv('ollama-vault-browse-container');
+        vaultBrowseContainer.createSpan({ text: 'Vault Browse: ' });
+
+        this.vaultBrowseToggle = vaultBrowseContainer.createEl('button', {
+            cls: 'ollama-vault-browse-toggle',
+            attr: { 'aria-label': 'Toggle vault browsing', 'title': 'Toggle vault browsing for relative and related files' }
+        });
+
+        this.vaultBrowseToggle.addEventListener('click', async () => {
+            this.plugin.settings.enableVaultBrowse = !this.plugin.settings.enableVaultBrowse;
+            await this.plugin.saveSettings();
+            this.updateVaultBrowseToggle();
+            this.updateContextIndicator();
+        });
+
         // Context note indicator
         this.contextIndicator = container.createDiv('ollama-context-indicator');
         this.updateContextIndicator();
@@ -176,22 +216,41 @@ class OllamaSideView extends ItemView {
 
     updateContextIndicator() {
         this.contextIndicator.empty();
+
+        const noteRow = this.contextIndicator.createDiv('ollama-context-row');
         if (this.plugin.settings.includeNoteContext) {
             const activeFile = this.app.workspace.getActiveFile();
             if (activeFile && activeFile.extension === 'md') {
                 this.contextNotePath = activeFile.path;
-                this.contextIndicator.createSpan({ 
+                noteRow.createSpan({ 
                     text: `- Context: ${activeFile.basename}`,
                     cls: 'ollama-context-text'
                 });
             } else {
                 this.contextNotePath = null;
-                this.contextIndicator.createSpan({ 
+                noteRow.createSpan({ 
                     text: '- No note context',
                     cls: 'ollama-context-text ollama-context-none'
                 });
             }
+        } else {
+            noteRow.createSpan({
+                text: '- Note context: off',
+                cls: 'ollama-context-text ollama-context-none'
+            });
         }
+
+        const browseRow = this.contextIndicator.createDiv('ollama-context-row');
+        browseRow.createSpan({
+            text: this.plugin.settings.enableVaultBrowse ? '- Vault browse: on' : '- Vault browse: off',
+            cls: this.plugin.settings.enableVaultBrowse ? 'ollama-context-text' : 'ollama-context-text ollama-context-none'
+        });
+
+        const memoryRow = this.contextIndicator.createDiv('ollama-context-row');
+        memoryRow.createSpan({
+            text: this.plugin.settings.enableChatMemory ? '- Memory: on' : '- Memory: off',
+            cls: this.plugin.settings.enableChatMemory ? 'ollama-context-text' : 'ollama-context-text ollama-context-none'
+        });
     }
 
     startStatusChecking() {
@@ -308,6 +367,7 @@ class OllamaSideView extends ItemView {
         this.messages = [];
         this.currentChatFile = null;
         this.contextNotePath = null;
+        this.chatMemorySummary = '';
         this.outputElement.empty();
         this.chatSearchInput.value = '';
         this.openInTabButton.style.display = 'none';
@@ -387,6 +447,12 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         
         // Build message content
         let content = frontmatter;
+
+        const memoryBlock = this.buildChatMemoryBlock(this.chatMemorySummary);
+        if (memoryBlock) {
+            content += memoryBlock + '\n\n';
+        }
+
         for (const msg of this.messages) {
             const roleHeader = msg.role === 'user' ? '## You' : '## Ollama';
             content += `${roleHeader}\n${msg.content}\n\n`;
@@ -427,6 +493,10 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                     this.contextNotePath = contextMatch[1];
                 }
             }
+
+            const memoryExtract = this.extractChatMemoryBlock(bodyContent);
+            this.chatMemorySummary = memoryExtract.summary;
+            bodyContent = memoryExtract.bodyContent;
             
             // Parse messages
             this.messages = [];
@@ -480,6 +550,16 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         }
         
         this.updateContextIndicator();
+        this.updateVaultBrowseToggle();
+    }
+
+    updateVaultBrowseToggle() {
+        if (!this.vaultBrowseToggle) return;
+
+        const enabled = this.plugin.settings.enableVaultBrowse;
+        this.vaultBrowseToggle.setText(enabled ? 'On' : 'Off');
+        this.vaultBrowseToggle.removeClass('is-enabled', 'is-disabled');
+        this.vaultBrowseToggle.addClass(enabled ? 'is-enabled' : 'is-disabled');
     }
 
     updateStatusIndicator() {
@@ -559,6 +639,10 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             const selectedModel = this.modelSelect.value || this.plugin.settings.defaultModel;
             const response = await this.callOllamaStreaming(message, selectedModel, contentDiv);
             this.messages.push({ role: 'assistant', content: response });
+
+            if (this.plugin.settings.enableChatMemory) {
+                await this.updateChatMemorySummary(message, response, selectedModel);
+            }
             
             // Setup copy button handler after response is complete
             copyButton.addEventListener('click', async () => {
@@ -699,23 +783,485 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         if (this.plugin.settings.customInstructions && this.plugin.settings.customInstructions.trim()) {
             fullPrompt += this.plugin.settings.customInstructions.trim() + '\n\n';
         }
+
+        if (this.plugin.settings.enableChatMemory) {
+            if (this.chatMemorySummary && this.chatMemorySummary.trim()) {
+                fullPrompt += `Chat memory summary:\n${this.chatMemorySummary.trim()}\n\n`;
+            }
+
+            const recentTurnsContext = this.buildRecentTurnsContext(userPrompt);
+            if (recentTurnsContext) {
+                fullPrompt += recentTurnsContext;
+            }
+        }
         
+        const activeFile = this.app.workspace.getActiveFile();
+        let activeContent = null;
+
+        if (activeFile && activeFile.extension === 'md' && (this.plugin.settings.includeNoteContext || this.plugin.settings.enableVaultBrowse)) {
+            try {
+                activeContent = await this.app.vault.read(activeFile);
+            } catch (e) {
+                activeContent = null;
+            }
+        }
+
         // Add note context if enabled
-        if (this.plugin.settings.includeNoteContext) {
-            const activeFile = this.app.workspace.getActiveFile();
-            if (activeFile && activeFile.extension === 'md') {
-                try {
-                    const content = await this.app.vault.read(activeFile);
-                    this.contextNotePath = activeFile.path;
-                    fullPrompt += `Context from note "${activeFile.basename}":\n\n${content}\n\n---\n\n`;
-                } catch (e) {
-                    // Failed to read file, continue without context
-                }
+        if (this.plugin.settings.includeNoteContext && activeFile && activeFile.extension === 'md' && activeContent) {
+            this.contextNotePath = activeFile.path;
+            fullPrompt += `Context from note "${activeFile.basename}":\n\n${activeContent}\n\n---\n\n`;
+        }
+
+        // Add vault browsing context if enabled
+        if (this.plugin.settings.enableVaultBrowse) {
+            const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt);
+            if (vaultContext) {
+                fullPrompt += vaultContext;
             }
         }
         
         fullPrompt += userPrompt;
         return fullPrompt;
+    }
+
+    async buildVaultBrowseContext(activeFile, activeContent, userPrompt) {
+        const contextParts = [];
+        const excludedPaths = new Set();
+
+        if (activeFile?.path) {
+            excludedPaths.add(activeFile.path);
+        }
+
+        const baseFolder = activeFile ? activeFile.parent : this.app.vault.getRoot();
+        const basePath = baseFolder ? baseFolder.path : '';
+        const prefix = basePath ? `${basePath}/` : '';
+
+        const relativeFiles = this.app.vault.getMarkdownFiles()
+            .filter(file => file.path !== activeFile?.path && file.path.startsWith(prefix))
+            .slice(0, VAULT_BROWSE_MAX_FILES);
+
+        if (relativeFiles.length > 0) {
+            const rootLabel = basePath ? basePath : 'vault root';
+            const fileList = relativeFiles.map(file => `- ${file.path}`).join('\n');
+            contextParts.push(`Relative files in ${rootLabel}:\n${fileList}`);
+        }
+
+        const linkedFiles = this.extractLinkedFiles(activeFile, activeContent)
+            .slice(0, VAULT_BROWSE_MAX_LINKED_FILES);
+
+        linkedFiles.forEach(file => excludedPaths.add(file.path));
+
+        let totalChars = 0;
+
+        if (linkedFiles.length > 0) {
+            const linkedBlock = await this.buildFileExcerptsBlock(
+                linkedFiles,
+                'Linked file excerpts',
+                [],
+                totalChars
+            );
+
+            if (linkedBlock.block) {
+                contextParts.push(linkedBlock.block);
+            }
+
+            totalChars = linkedBlock.totalChars;
+        }
+
+        const tokenSource = [
+            userPrompt || '',
+            activeContent ? activeContent.substring(0, VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS) : ''
+        ].join(' ');
+
+        const searchTokens = this.extractSearchTokens(tokenSource);
+
+        const relatedFiles = this.findRelatedFiles(activeFile, searchTokens, excludedPaths);
+
+        if (relatedFiles.length > 0 && totalChars < VAULT_BROWSE_MAX_TOTAL_CHARS) {
+            const relatedBlock = await this.buildFileExcerptsBlock(
+                relatedFiles,
+                'Related note excerpts',
+                searchTokens,
+                totalChars
+            );
+
+            if (relatedBlock.block) {
+                contextParts.push(relatedBlock.block);
+            }
+
+            totalChars = relatedBlock.totalChars;
+        }
+
+        if (contextParts.length === 0) return '';
+
+        return `Vault context:\n\n${contextParts.join('\n\n')}\n\n---\n\n`;
+    }
+
+    async buildFileExcerptsBlock(files, heading, searchTokens, totalChars) {
+        if (!files || files.length === 0 || totalChars >= VAULT_BROWSE_MAX_TOTAL_CHARS) {
+            return { block: '', totalChars };
+        }
+
+        let contentBlock = `${heading}:\n`;
+
+        for (const file of files) {
+            if (totalChars >= VAULT_BROWSE_MAX_TOTAL_CHARS) break;
+
+            try {
+                const content = await this.app.vault.read(file);
+                let trimmed = this.getBestExcerpt(content, searchTokens);
+
+                if (trimmed.length > VAULT_BROWSE_MAX_FILE_CHARS) {
+                    trimmed = trimmed.substring(0, VAULT_BROWSE_MAX_FILE_CHARS) + '\n...[truncated]';
+                }
+
+                if (totalChars + trimmed.length > VAULT_BROWSE_MAX_TOTAL_CHARS) {
+                    const remaining = Math.max(VAULT_BROWSE_MAX_TOTAL_CHARS - totalChars, 0);
+                    trimmed = trimmed.substring(0, remaining) + '\n...[truncated]';
+                }
+
+                totalChars += trimmed.length;
+                contentBlock += `\n### ${file.path}\n${trimmed}\n`;
+            } catch (e) {
+                // Skip unreadable files
+            }
+        }
+
+        return { block: contentBlock.trim(), totalChars };
+    }
+
+    getBestExcerpt(content, searchTokens) {
+        if (!content) return '';
+
+        if (!searchTokens || searchTokens.length === 0) {
+            return content;
+        }
+
+        const lowerContent = content.toLowerCase();
+        let bestIndex = -1;
+
+        for (const token of searchTokens) {
+            const index = lowerContent.indexOf(token);
+            if (index !== -1 && (bestIndex === -1 || index < bestIndex)) {
+                bestIndex = index;
+            }
+        }
+
+        if (bestIndex === -1) {
+            return content;
+        }
+
+        const windowSize = VAULT_BROWSE_MAX_FILE_CHARS;
+        const start = Math.max(0, bestIndex - Math.floor(windowSize * 0.25));
+        const end = Math.min(content.length, start + windowSize);
+        let excerpt = content.substring(start, end);
+
+        if (start > 0) {
+            excerpt = '...\n' + excerpt;
+        }
+
+        if (end < content.length) {
+            excerpt += '\n...';
+        }
+
+        return excerpt;
+    }
+
+    extractSearchTokens(sourceText) {
+        if (!sourceText) return [];
+
+        const matches = sourceText.toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+        const tokens = [];
+        const seen = new Set();
+
+        for (const word of matches) {
+            if (tokens.length >= VAULT_BROWSE_MAX_TOKENS) break;
+            if (VAULT_BROWSE_STOPWORDS.has(word)) continue;
+            if (seen.has(word)) continue;
+            seen.add(word);
+            tokens.push(word);
+        }
+
+        return tokens;
+    }
+
+    findRelatedFiles(activeFile, searchTokens, excludedPaths) {
+        if (!searchTokens || searchTokens.length === 0) return [];
+
+        const files = this.app.vault.getMarkdownFiles();
+        const scored = [];
+        let scanned = 0;
+
+        for (const file of files) {
+            if (excludedPaths?.has(file.path)) {
+                continue;
+            }
+
+            if (activeFile && file.path === activeFile.path) {
+                continue;
+            }
+
+            scanned += 1;
+            if (scanned > VAULT_BROWSE_MAX_RELATED_SCAN) break;
+
+            const cache = this.app.metadataCache.getFileCache(file);
+            const metaText = this.buildMetadataText(file, cache);
+            const score = this.scoreText(searchTokens, metaText);
+
+            if (score >= VAULT_BROWSE_RELATED_MIN_SCORE) {
+                scored.push({ file, score });
+            }
+        }
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, VAULT_BROWSE_MAX_RELATED_FILES).map(item => item.file);
+    }
+
+    buildMetadataText(file, cache) {
+        const parts = [file.basename, file.path];
+
+        if (cache?.headings?.length) {
+            parts.push(cache.headings.map(heading => heading.heading).join(' '));
+        }
+
+        if (cache?.tags?.length) {
+            parts.push(cache.tags.map(tag => tag.tag).join(' '));
+        }
+
+        if (cache?.frontmatter) {
+            parts.push(this.flattenFrontmatter(cache.frontmatter));
+        }
+
+        return parts.join(' ');
+    }
+
+    flattenFrontmatter(value) {
+        const parts = [];
+
+        const collect = (item) => {
+            if (item === null || item === undefined) return;
+            if (Array.isArray(item)) {
+                item.forEach(collect);
+                return;
+            }
+            if (typeof item === 'object') {
+                Object.values(item).forEach(collect);
+                return;
+            }
+            parts.push(String(item));
+        };
+
+        collect(value);
+        return parts.join(' ');
+    }
+
+    scoreText(tokens, text) {
+        if (!tokens || tokens.length === 0 || !text) return 0;
+        const lowerText = text.toLowerCase();
+        let score = 0;
+
+        for (const token of tokens) {
+            if (lowerText.includes(token)) {
+                score += 1;
+            }
+        }
+
+        return score;
+    }
+
+    extractLinkedFiles(activeFile, activeContent) {
+        if (!activeFile || !activeContent) return [];
+
+        const linkedPaths = new Set();
+
+        const wikiLinkRegex = /\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
+        for (const match of activeContent.matchAll(wikiLinkRegex)) {
+            const linkPath = match[1].trim();
+            if (!linkPath) continue;
+
+            const resolved = this.app.metadataCache.getFirstLinkpathDest(linkPath, activeFile.path);
+            if (resolved && resolved.extension === 'md') {
+                linkedPaths.add(resolved.path);
+            }
+        }
+
+        const markdownLinkRegex = /\[[^\]]*\]\(([^)]+)\)/g;
+        for (const match of activeContent.matchAll(markdownLinkRegex)) {
+            let linkPath = match[1].trim();
+            if (!linkPath) continue;
+
+            if (linkPath.startsWith('http:') || linkPath.startsWith('https:') || linkPath.startsWith('mailto:')) {
+                continue;
+            }
+
+            linkPath = linkPath.split('#')[0].trim();
+            if (!linkPath) continue;
+
+            const resolved = this.app.metadataCache.getFirstLinkpathDest(linkPath, activeFile.path);
+            if (resolved && resolved.extension === 'md') {
+                linkedPaths.add(resolved.path);
+            }
+        }
+
+        const files = [];
+        for (const path of linkedPaths) {
+            const file = this.app.vault.getAbstractFileByPath(path);
+            if (file && file.extension === 'md') {
+                files.push(file);
+            }
+        }
+
+        return files;
+    }
+
+    buildChatMemoryBlock(summary) {
+        if (!summary || !summary.trim()) return '';
+
+        const sanitized = summary.replace(/-->/g, '-- >').trim();
+        return `<!-- ollama-memory:start\n${sanitized}\nollama-memory:end -->`;
+    }
+
+    extractChatMemoryBlock(bodyContent) {
+        if (!bodyContent) {
+            return { summary: '', bodyContent: '' };
+        }
+
+        const match = bodyContent.match(CHAT_MEMORY_BLOCK_REGEX);
+        if (!match) {
+            return { summary: '', bodyContent };
+        }
+
+        let summary = match[0]
+            .replace(/<!--\s*ollama-memory:start/i, '')
+            .replace(/ollama-memory:end\s*-->/i, '')
+            .trim();
+
+        summary = summary.replace(/\r\n/g, '\n');
+
+        const cleanedBody = bodyContent.replace(CHAT_MEMORY_BLOCK_REGEX, '').trimStart();
+        return { summary, bodyContent: cleanedBody };
+    }
+
+    buildRecentTurnsContext(userPrompt) {
+        const recentTurns = Math.max(this.plugin.settings.chatMemoryRecentTurns || 0, 0);
+        if (recentTurns === 0) return '';
+
+        const messages = this.getMessagesForContext(userPrompt);
+        if (messages.length === 0) return '';
+
+        const lines = ['Recent chat (last turns):'];
+
+        for (const message of messages) {
+            const label = message.role === 'user' ? 'User' : 'Assistant';
+            lines.push(`${label}: ${message.content}`);
+        }
+
+        return lines.join('\n') + '\n\n';
+    }
+
+    getMessagesForContext(userPrompt) {
+        const recentTurns = Math.max(this.plugin.settings.chatMemoryRecentTurns || 0, 0);
+        if (recentTurns === 0) return [];
+
+        const messages = [...this.messages];
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage && lastMessage.role === 'user' && lastMessage.content === userPrompt) {
+            messages.pop();
+        }
+
+        const collected = [];
+        let turnCount = 0;
+
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const message = messages[i];
+            if (message.role === 'assistant') {
+                collected.push(message);
+                if (i > 0 && messages[i - 1].role === 'user') {
+                    collected.push(messages[i - 1]);
+                    turnCount += 1;
+                    i -= 1;
+                }
+            }
+
+            if (turnCount >= recentTurns) {
+                break;
+            }
+        }
+
+        return collected.reverse();
+    }
+
+    async updateChatMemorySummary(userMessage, assistantMessage, model) {
+        if (!this.plugin.settings.enableChatMemory) return;
+
+        const summaryPrompt = this.buildMemorySummaryPrompt(
+            this.chatMemorySummary,
+            this.trimText(userMessage, CHAT_MEMORY_MAX_MESSAGE_CHARS),
+            this.trimText(assistantMessage, CHAT_MEMORY_MAX_MESSAGE_CHARS),
+            this.plugin.settings.chatMemoryMaxChars
+        );
+
+        const options = {
+            temperature: this.plugin.settings.chatMemorySummaryTemperature
+        };
+
+        try {
+            const summary = await this.callOllamaSummary(model, summaryPrompt, options);
+            if (summary) {
+                this.chatMemorySummary = summary.trim();
+            }
+        } catch (error) {
+            console.warn('Failed to update chat memory summary:', error);
+        }
+    }
+
+    buildMemorySummaryPrompt(previousSummary, userMessage, assistantMessage, maxChars) {
+        const summaryText = previousSummary && previousSummary.trim() ? previousSummary.trim() : 'None yet.';
+
+        return [
+            'You are updating a concise memory summary of a chat.',
+            'Rules:',
+            `- Keep it under ${maxChars} characters.`,
+            '- Focus on key facts, decisions, preferences, and open questions.',
+            '- Do not include raw dialogue or formatting.',
+            '- Use short sentences or fragments.',
+            '',
+            `Current summary:\n${summaryText}`,
+            '',
+            'New exchange:',
+            `User: ${userMessage}`,
+            `Assistant: ${assistantMessage}`,
+            '',
+            'Updated summary:'
+        ].join('\n');
+    }
+
+    async callOllamaSummary(model, prompt, options) {
+        const response = await fetch(`${this.plugin.settings.ollamaUrl}/api/generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model,
+                prompt,
+                stream: false,
+                options
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Ollama summary API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data?.response || '';
+    }
+
+    trimText(text, maxChars) {
+        if (!text) return '';
+        if (!maxChars || text.length <= maxChars) return text;
+        return text.substring(0, maxChars) + '...';
     }
 
     async renderMessage(role, content) {
@@ -909,6 +1455,70 @@ class OllamaSettingsTab extends PluginSettingTab {
                     this.plugin.settings.includeNoteContext = value;
                     await this.plugin.saveSettings();
                 });
+            });
+
+        new Setting(containerEl)
+            .setName('Enable Vault Browsing')
+            .setDesc('Include relative file listings, linked note excerpts, and related note matches when building context')
+            .addToggle(toggle => {
+                toggle.setValue(this.plugin.settings.enableVaultBrowse);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.enableVaultBrowse = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        // Chat Memory section
+        containerEl.createEl('h3', { text: 'Chat Memory' });
+
+        new Setting(containerEl)
+            .setName('Enable Chat Memory')
+            .setDesc('Keep a rolling summary and recent turns for the current chat')
+            .addToggle(toggle => {
+                toggle.setValue(this.plugin.settings.enableChatMemory);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.enableChatMemory = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('Memory Summary Size')
+            .setDesc('Maximum characters for the rolling summary')
+            .addText(text => {
+                text.setPlaceholder('3000')
+                    .setValue(this.plugin.settings.chatMemoryMaxChars.toString())
+                    .onChange(async (value) => {
+                        const parsed = parseInt(value);
+                        this.plugin.settings.chatMemoryMaxChars = isNaN(parsed) ? 3000 : Math.max(parsed, 500);
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('Recent Turns in Prompt')
+            .setDesc('How many recent user/assistant turns to include')
+            .addText(text => {
+                text.setPlaceholder('4')
+                    .setValue(this.plugin.settings.chatMemoryRecentTurns.toString())
+                    .onChange(async (value) => {
+                        const parsed = parseInt(value);
+                        this.plugin.settings.chatMemoryRecentTurns = isNaN(parsed) ? 4 : Math.max(parsed, 0);
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('Memory Summary Temperature')
+            .setDesc('Lower values keep summaries stable and concise')
+            .addSlider(slider => {
+                slider.setLimits(0, 1, 0.1)
+                    .setValue(this.plugin.settings.chatMemorySummaryTemperature)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.chatMemorySummaryTemperature = value;
+                        await this.plugin.saveSettings();
+                    });
             });
     }
 }

@@ -134,6 +134,15 @@
     background: var(--background-secondary);
     border-radius: 4px;
     font-size: 0.85em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ollama-context-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .ollama-context-text {
@@ -191,6 +200,31 @@
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+.ollama-vault-browse-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ollama-vault-browse-toggle {
+    border: none;
+    border-radius: 3px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.ollama-vault-browse-toggle.is-enabled {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.ollama-vault-browse-toggle.is-disabled {
+    background: var(--background-modifier-border);
+    color: var(--text-normal);
 }
 
 .ollama-model-select {
