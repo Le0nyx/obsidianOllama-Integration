@@ -62,12 +62,42 @@ class OllamaSideView extends ItemView {
         return 'brain-circuit';
     }
 
+    // SVG icon helpers
+    _svgIcon(pathD, viewBox = '24') {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${viewBox} ${viewBox}`);
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        // Support multiple path definitions
+        const paths = Array.isArray(pathD) ? pathD : [pathD];
+        for (const d of paths) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', d);
+            svg.appendChild(path);
+        }
+        return svg;
+    }
+
+    _iconButton(container, cls, title, pathD) {
+        const btn = container.createEl('button', {
+            cls: `ollama-icon-btn ${cls}`,
+            attr: { 'aria-label': title, 'title': title }
+        });
+        btn.appendChild(this._svgIcon(pathD));
+        return btn;
+    }
+
     async onOpen() {
         const container = this.contentEl;
         container.empty();
         container.addClass('ollama-side-container');
 
-        // Header with title, chat selector, and new chat button
+        // ── Header ──────────────────────────────────────────
         const header = container.createDiv('ollama-header');
         const headerLeft = header.createDiv('ollama-header-left');
         headerLeft.createEl('h3', { text: 'Ollama Chat' });
@@ -79,7 +109,7 @@ class OllamaSideView extends ItemView {
         
         this.chatSearchInput = chatSelectorContainer.createEl('input', {
             type: 'text',
-            placeholder: 'Search chats...',
+            placeholder: 'Search chats…',
             cls: 'ollama-chat-search'
         });
         
@@ -91,8 +121,7 @@ class OllamaSideView extends ItemView {
             this.chatListContainer.style.display = 'block';
         });
         
-        this.chatSearchInput.addEventListener('blur', (e) => {
-            // Delay hiding to allow click on items
+        this.chatSearchInput.addEventListener('blur', () => {
             setTimeout(() => {
                 this.chatListContainer.style.display = 'none';
             }, 200);
@@ -102,12 +131,9 @@ class OllamaSideView extends ItemView {
             this.filterChatList(this.chatSearchInput.value);
         });
         
-        // Open in new tab button
-        this.openInTabButton = headerRight.createEl('button', {
-            text: '↗',
-            cls: 'ollama-open-tab-button',
-            attr: { 'aria-label': 'Open in New Tab', 'title': 'Open current chat in new tab' }
-        });
+        // Open in new tab (icon: external-link)
+        this.openInTabButton = this._iconButton(headerRight, '', 'Open in new tab',
+            ['M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6', 'M15 3h6v6', 'M10 14L21 3']);
         this.openInTabButton.style.display = 'none';
         this.openInTabButton.addEventListener('click', async () => {
             if (this.currentChatFile) {
@@ -121,50 +147,53 @@ class OllamaSideView extends ItemView {
             }
         });
         
-        // New chat button
-        const newChatButton = headerRight.createEl('button', {
-            text: '+',
-            cls: 'ollama-new-chat-button',
-            attr: { 'aria-label': 'New Chat', 'title': 'New Chat' }
-        });
+        // New chat (icon: plus)
+        const newChatButton = this._iconButton(headerRight, 'ollama-icon-btn--accent', 'New Chat',
+            ['M12 5v14', 'M5 12h14']);
         newChatButton.addEventListener('click', () => {
             this.createNewChat();
         });
 
+        // ── Controls (compact single row) ───────────────────
         const controlsSection = container.createDiv('ollama-controls-section');
         
+        // Status dot
         const statusContainer = controlsSection.createDiv('ollama-status-container');
-        this.statusElement = statusContainer.createDiv('ollama-status');
+        this.statusDot = statusContainer.createDiv('ollama-status-dot');
+        this.statusLabel = statusContainer.createSpan({ cls: 'ollama-status-label' });
         this.updateStatusIndicator();
 
+        controlsSection.createDiv('ollama-controls-sep');
+
+        // Model selector
         const modelContainer = controlsSection.createDiv('ollama-model-container');
-        modelContainer.createSpan({ text: 'Model: ' });
+        modelContainer.createSpan({ text: 'Model' });
         
-        const modelSelect = modelContainer.createEl('select', { cls: 'ollama-model-select' });
-        this.modelSelect = modelSelect;
+        this.modelSelect = modelContainer.createEl('select', { cls: 'ollama-model-select' });
         this.populateModelDropdown();
         
-        // Track user's model selection
         this.modelSelect.addEventListener('change', () => {
             this.userSelectedModel = this.modelSelect.value;
         });
 
-        const refreshButton = modelContainer.createEl('button', {
-            text: 'Refresh',
-            cls: 'ollama-refresh-button'
-        });
+        // Refresh models (icon: refresh-cw)
+        const refreshButton = this._iconButton(modelContainer, '', 'Refresh models',
+            ['M23 4v6h-6', 'M1 20v-6h6', 'M3.51 9a9 9 0 0 1 14.85-3.36L23 10', 'M20.49 15a9 9 0 0 1-14.85 3.36L1 14']);
         refreshButton.addEventListener('click', async () => {
             await this.plugin.refreshAvailableModels();
             this.populateModelDropdown();
             new Notice('Models refreshed');
         });
 
+        controlsSection.createDiv('ollama-controls-sep');
+
+        // Vault browse toggle
         const vaultBrowseContainer = controlsSection.createDiv('ollama-vault-browse-container');
-        vaultBrowseContainer.createSpan({ text: 'Vault Browse: ' });
+        vaultBrowseContainer.createSpan({ text: 'Vault' });
 
         this.vaultBrowseToggle = vaultBrowseContainer.createEl('button', {
             cls: 'ollama-vault-browse-toggle',
-            attr: { 'aria-label': 'Toggle vault browsing', 'title': 'Toggle vault browsing for relative and related files' }
+            attr: { 'aria-label': 'Toggle vault browsing', 'title': 'Include related vault files as context' }
         });
 
         this.vaultBrowseToggle.addEventListener('click', async () => {
@@ -174,19 +203,23 @@ class OllamaSideView extends ItemView {
             this.updateContextIndicator();
         });
 
-        // Context note indicator
+        // ── Context indicator ───────────────────────────────
         this.contextIndicator = container.createDiv('ollama-context-indicator');
         this.updateContextIndicator();
 
+        // ── Messages area ───────────────────────────────────
         this.outputElement = container.createDiv('ollama-output');
 
+        // ── Input area ──────────────────────────────────────
         const inputContainer = container.createDiv('ollama-input-container');
         
-        this.inputElement = inputContainer.createEl('textarea', {
-            placeholder: 'Ask Ollama anything... (Shift+Enter for new line)',
+        const inputRow = inputContainer.createDiv('ollama-input-row');
+        
+        this.inputElement = inputRow.createEl('textarea', {
+            placeholder: 'Message… (Shift+Enter for new line)',
             cls: 'ollama-textarea'
         });
-        this.inputElement.rows = 3;
+        this.inputElement.rows = 2;
         this.inputElement.disabled = !this.plugin.isOllamaRunning;
 
         this.inputElement.addEventListener('keydown', (event) => {
@@ -196,12 +229,30 @@ class OllamaSideView extends ItemView {
             }
         });
 
-        // Add interrupt button
-        this.interruptButton = inputContainer.createEl('button', {
-            text: 'Interrupt',
-            cls: 'ollama-interrupt-button',
-            attr: { 'aria-label': 'Interrupt generation', 'title': 'Stop generation' }
+        // Auto-resize textarea
+        this.inputElement.addEventListener('input', () => {
+            this.inputElement.style.height = 'auto';
+            this.inputElement.style.height = Math.min(this.inputElement.scrollHeight, 140) + 'px';
         });
+
+        // Send button (icon: send/arrow-up)
+        this.sendButton = inputRow.createEl('button', {
+            cls: 'ollama-send-btn',
+            attr: { 'aria-label': 'Send message', 'title': 'Send' }
+        });
+        this.sendButton.appendChild(this._svgIcon(['M22 2L11 13', 'M22 2l-7 20-4-9-9-4z']));
+        this.sendButton.disabled = !this.plugin.isOllamaRunning;
+        this.sendButton.addEventListener('click', () => {
+            this.sendMessage();
+        });
+
+        // Interrupt button (icon: square/stop)
+        this.interruptButton = inputContainer.createEl('button', {
+            cls: 'ollama-interrupt-button',
+            attr: { 'aria-label': 'Stop generation', 'title': 'Stop generation' }
+        });
+        this.interruptButton.appendChild(this._svgIcon('M6 6h12v12H6z'));
+        this.interruptButton.insertAdjacentText('beforeend', ' Stop');
         this.interruptButton.style.display = 'none';
         this.interruptButton.addEventListener('click', () => {
             this.interruptGeneration();
@@ -210,46 +261,49 @@ class OllamaSideView extends ItemView {
         this.updateUI();
         await this.refreshChatList();
         
-        // Start automatic status checking every 2 seconds
+        // Start automatic status checking
         this.startStatusChecking();
     }
 
     updateContextIndicator() {
         this.contextIndicator.empty();
 
+        // Note context
         const noteRow = this.contextIndicator.createDiv('ollama-context-row');
         if (this.plugin.settings.includeNoteContext) {
             const activeFile = this.app.workspace.getActiveFile();
             if (activeFile && activeFile.extension === 'md') {
                 this.contextNotePath = activeFile.path;
                 noteRow.createSpan({ 
-                    text: `- Context: ${activeFile.basename}`,
-                    cls: 'ollama-context-text'
+                    text: `📝 ${activeFile.basename}`,
+                    cls: 'ollama-context-text ollama-context-active'
                 });
             } else {
                 this.contextNotePath = null;
                 noteRow.createSpan({ 
-                    text: '- No note context',
+                    text: '📝 No note',
                     cls: 'ollama-context-text ollama-context-none'
                 });
             }
         } else {
             noteRow.createSpan({
-                text: '- Note context: off',
+                text: '📝 Off',
                 cls: 'ollama-context-text ollama-context-none'
             });
         }
 
+        // Vault browse
         const browseRow = this.contextIndicator.createDiv('ollama-context-row');
         browseRow.createSpan({
-            text: this.plugin.settings.enableVaultBrowse ? '- Vault browse: on' : '- Vault browse: off',
-            cls: this.plugin.settings.enableVaultBrowse ? 'ollama-context-text' : 'ollama-context-text ollama-context-none'
+            text: this.plugin.settings.enableVaultBrowse ? '🔍 Vault' : '🔍 Off',
+            cls: this.plugin.settings.enableVaultBrowse ? 'ollama-context-text ollama-context-active' : 'ollama-context-text ollama-context-none'
         });
 
+        // Memory
         const memoryRow = this.contextIndicator.createDiv('ollama-context-row');
         memoryRow.createSpan({
-            text: this.plugin.settings.enableChatMemory ? '- Memory: on' : '- Memory: off',
-            cls: this.plugin.settings.enableChatMemory ? 'ollama-context-text' : 'ollama-context-text ollama-context-none'
+            text: this.plugin.settings.enableChatMemory ? '🧠 Memory' : '🧠 Off',
+            cls: this.plugin.settings.enableChatMemory ? 'ollama-context-text ollama-context-active' : 'ollama-context-text ollama-context-none'
         });
     }
 
@@ -257,10 +311,10 @@ class OllamaSideView extends ItemView {
         // Check immediately
         this.checkStatus();
         
-        // Then check every 2 seconds
+        // Then check every 10 seconds (not 2s — reduces network spam)
         this.statusCheckInterval = window.setInterval(() => {
             this.checkStatus();
-        }, 2000);
+        }, 10000);
     }
 
     stopStatusChecking() {
@@ -274,16 +328,12 @@ class OllamaSideView extends ItemView {
         const wasRunning = this.plugin.isOllamaRunning;
         await this.plugin.checkOllamaStatus();
         
-        // If status changed, update UI and refresh models
+        // Only refresh models + UI when status actually changes
         if (wasRunning !== this.plugin.isOllamaRunning) {
             if (this.plugin.isOllamaRunning) {
                 await this.plugin.refreshAvailableModels();
             }
             this.updateUI();
-        } else if (this.plugin.isOllamaRunning) {
-            // If still running, just update models silently
-            await this.plugin.refreshAvailableModels();
-            this.populateModelDropdown();
         }
     }
 
@@ -426,18 +476,23 @@ class OllamaSideView extends ItemView {
             }
         }
         
-        // Build frontmatter
+        // Build frontmatter with richer metadata
         const now = new Date().toISOString();
         const firstUserMsg = this.messages.find(m => m.role === 'user');
         const title = firstUserMsg 
             ? firstUserMsg.content.substring(0, 60).replace(/\n/g, ' ')
             : 'Ollama Chat';
+        const modelName = this.modelSelect?.value || this.plugin.settings.defaultModel;
+        const turnCount = this.messages.filter(m => m.role === 'user').length;
         
         let frontmatter = `---
 title: "${title.replace(/"/g, '\\"')}"
 createdAt: ${this.currentChatFile ? '' : now}
 updatedAt: ${now}
-model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
+model: "${modelName}"
+turns: ${turnCount}
+memory: ${this.plugin.settings.enableChatMemory ? 'true' : 'false'}
+vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         
         if (this.contextNotePath) {
             frontmatter += `\ncontextNote: "[[${this.contextNotePath}]]"`;
@@ -445,7 +500,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         
         frontmatter += '\n---\n\n';
         
-        // Build message content
+        // Build message content with model attribution
         let content = frontmatter;
 
         const memoryBlock = this.buildChatMemoryBlock(this.chatMemorySummary);
@@ -454,8 +509,11 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         }
 
         for (const msg of this.messages) {
-            const roleHeader = msg.role === 'user' ? '## You' : '## Ollama';
-            content += `${roleHeader}\n${msg.content}\n\n`;
+            if (msg.role === 'user') {
+                content += `## You\n${msg.content}\n\n`;
+            } else {
+                content += `## Ollama (${modelName})\n${msg.content}\n\n`;
+            }
         }
         
         // Save or update file
@@ -465,10 +523,11 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         } else {
             await this.app.vault.create(filePath, content);
             this.currentChatFile = filePath;
-            this.openInTabButton.style.display = 'inline-block';
+            if (this.openInTabButton) this.openInTabButton.style.display = 'inline-block';
+            // Push new file to front of cached list instead of full rescan
+            const basename = filePath.substring(filePath.lastIndexOf('/') + 1).replace('.md', '');
+            this.chatFiles.unshift({ path: filePath, name: basename, mtime: Date.now() });
         }
-        
-        await this.refreshChatList();
     }
 
     async loadChat(filePath) {
@@ -509,7 +568,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                 
                 if (roleText === 'you') {
                     this.messages.push({ role: 'user', content: messageContent });
-                } else if (roleText === 'ollama') {
+                } else if (roleText === 'ollama' || roleText.startsWith('ollama')) {
                     this.messages.push({ role: 'assistant', content: messageContent });
                 }
             }
@@ -539,6 +598,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         this.updateStatusIndicator();
         
         this.inputElement.disabled = !isRunning;
+        if (this.sendButton) this.sendButton.disabled = !isRunning;
         
         if (isRunning) {
             this.populateModelDropdown();
@@ -563,13 +623,10 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
     }
 
     updateStatusIndicator() {
-        this.statusElement.empty();
-        const statusText = this.plugin.isOllamaRunning ? '● Running' : '○ Stopped';
-        const statusClass = this.plugin.isOllamaRunning ? 'running' : 'stopped';
-        
-        this.statusElement.setText(statusText);
-        this.statusElement.removeClass('ollama-status-running', 'ollama-status-stopped');
-        this.statusElement.addClass(`ollama-status-${statusClass}`);
+        if (!this.statusDot || !this.statusLabel) return;
+        const running = this.plugin.isOllamaRunning;
+        this.statusDot.className = 'ollama-status-dot ' + (running ? 'ollama-status-dot--running' : 'ollama-status-dot--stopped');
+        this.statusLabel.setText(running ? 'Running' : 'Stopped');
     }
 
     populateModelDropdown() {
@@ -617,41 +674,34 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         await this.renderMessage('user', message);
         this.inputElement.value = '';
         this.inputElement.disabled = true;
+        if (this.sendButton) this.sendButton.disabled = true;
         this.interruptButton.style.display = 'inline-block';
 
-        // Create placeholder for streaming response
+        // Create bubble for streaming response
         const responseDiv = this.outputElement.createDiv('ollama-message ollama-assistant');
+        const bubble = responseDiv.createDiv('ollama-bubble');
         
-        const headerDiv = responseDiv.createDiv('ollama-message-header');
-        const roleSpan = headerDiv.createSpan({ text: 'Ollama: ' });
-        roleSpan.addClass('ollama-role');
+        const headerDiv = bubble.createDiv('ollama-message-header');
+        headerDiv.createSpan({ text: 'Ollama', cls: 'ollama-role' });
         
-        // Add copy button for streaming response
-        const copyButton = headerDiv.createEl('button', {
-            text: 'copy',
-            cls: 'ollama-copy-button',
-            attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
-        });
+        const copyButton = this._createCopyButton(headerDiv);
         
-        const contentDiv = responseDiv.createDiv('ollama-content');
+        const contentDiv = bubble.createDiv('ollama-content');
 
         try {
             const selectedModel = this.modelSelect.value || this.plugin.settings.defaultModel;
             const response = await this.callOllamaStreaming(message, selectedModel, contentDiv);
             this.messages.push({ role: 'assistant', content: response });
 
+            // Fire-and-forget: update memory in background so input re-enables immediately
             if (this.plugin.settings.enableChatMemory) {
-                await this.updateChatMemorySummary(message, response, selectedModel);
+                this.updateChatMemorySummary(message, response, selectedModel).catch(e => {
+                    console.warn('Background memory summary failed:', e);
+                });
             }
             
             // Setup copy button handler after response is complete
-            copyButton.addEventListener('click', async () => {
-                await navigator.clipboard.writeText(response);
-                copyButton.setText('✓');
-                setTimeout(() => {
-                    copyButton.setText('copy');
-                }, 1500);
-            });
+            this.setupCopyButton(copyButton, response);
             
             // Auto-save after each exchange
             await this.saveCurrentChat();
@@ -679,6 +729,7 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         } finally {
             this.inputElement.disabled = false;
             this.interruptButton.style.display = 'none';
+            if (this.sendButton) this.sendButton.disabled = false;
             this.inputElement.focus();
         }
     }
@@ -722,12 +773,11 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             throw new Error(`Ollama API error: ${response.status}`);
         }
 
-        // Handle streaming response
+        // Handle streaming response — plain text during stream for speed
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
-        let lastRenderTime = 0;
-        const renderInterval = 100; // Render every 100ms for smooth updates
+        contentDiv.addClass('ollama-streaming-cursor');
 
         while (true) {
             const { done, value } = await reader.read();
@@ -741,20 +791,9 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
                     const json = JSON.parse(line);
                     if (json.response) {
                         fullResponse += json.response;
-                        
-                        // Throttle markdown rendering for performance
-                        const now = Date.now();
-                        if (now - lastRenderTime > renderInterval) {
-                            contentDiv.empty();
-                            await MarkdownRenderer.renderMarkdown(
-                                fullResponse,
-                                contentDiv,
-                                '',
-                                this
-                            );
-                            this.outputElement.scrollTop = this.outputElement.scrollHeight;
-                            lastRenderTime = now;
-                        }
+                        // Plain text update — no DOM teardown/rebuild
+                        contentDiv.textContent = fullResponse;
+                        this.outputElement.scrollTop = this.outputElement.scrollHeight;
                     }
                 } catch (e) {
                     // Skip malformed JSON lines
@@ -762,7 +801,8 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             }
         }
 
-        // Final render to ensure complete markdown
+        // Final render: full markdown only once
+        contentDiv.removeClass('ollama-streaming-cursor');
         contentDiv.empty();
         await MarkdownRenderer.renderMarkdown(
             fullResponse,
@@ -902,29 +942,31 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
             return { block: '', totalChars };
         }
 
+        // Parallel reads for speed
+        const readResults = await Promise.allSettled(
+            files.map(file => this.app.vault.read(file).then(content => ({ file, content })))
+        );
+
         let contentBlock = `${heading}:\n`;
 
-        for (const file of files) {
+        for (const result of readResults) {
             if (totalChars >= VAULT_BROWSE_MAX_TOTAL_CHARS) break;
+            if (result.status !== 'fulfilled') continue;
 
-            try {
-                const content = await this.app.vault.read(file);
-                let trimmed = this.getBestExcerpt(content, searchTokens);
+            const { file, content } = result.value;
+            let trimmed = this.getBestExcerpt(content, searchTokens);
 
-                if (trimmed.length > VAULT_BROWSE_MAX_FILE_CHARS) {
-                    trimmed = trimmed.substring(0, VAULT_BROWSE_MAX_FILE_CHARS) + '\n...[truncated]';
-                }
-
-                if (totalChars + trimmed.length > VAULT_BROWSE_MAX_TOTAL_CHARS) {
-                    const remaining = Math.max(VAULT_BROWSE_MAX_TOTAL_CHARS - totalChars, 0);
-                    trimmed = trimmed.substring(0, remaining) + '\n...[truncated]';
-                }
-
-                totalChars += trimmed.length;
-                contentBlock += `\n### ${file.path}\n${trimmed}\n`;
-            } catch (e) {
-                // Skip unreadable files
+            if (trimmed.length > VAULT_BROWSE_MAX_FILE_CHARS) {
+                trimmed = trimmed.substring(0, VAULT_BROWSE_MAX_FILE_CHARS) + '\n...[truncated]';
             }
+
+            if (totalChars + trimmed.length > VAULT_BROWSE_MAX_TOTAL_CHARS) {
+                const remaining = Math.max(VAULT_BROWSE_MAX_TOTAL_CHARS - totalChars, 0);
+                trimmed = trimmed.substring(0, remaining) + '\n...[truncated]';
+            }
+
+            totalChars += trimmed.length;
+            contentBlock += `\n### ${file.path}\n${trimmed}\n`;
         }
 
         return { block: contentBlock.trim(), totalChars };
@@ -1010,6 +1052,8 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
 
             if (score >= VAULT_BROWSE_RELATED_MIN_SCORE) {
                 scored.push({ file, score });
+                // Early exit once we have enough candidates
+                if (scored.length >= VAULT_BROWSE_MAX_RELATED_FILES * 2) break;
             }
         }
 
@@ -1219,12 +1263,14 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         const summaryText = previousSummary && previousSummary.trim() ? previousSummary.trim() : 'None yet.';
 
         return [
-            'You are updating a concise memory summary of a chat.',
+            'You are a memory manager for a chat conversation. Update the summary below with new information.',
             'Rules:',
             `- Keep it under ${maxChars} characters.`,
-            '- Focus on key facts, decisions, preferences, and open questions.',
-            '- Do not include raw dialogue or formatting.',
-            '- Use short sentences or fragments.',
+            '- Track: key facts, user preferences, decisions made, file/note names mentioned, open questions.',
+            '- Preserve important context from the previous summary.',
+            '- Do not include raw dialogue, formatting, or pleasantries.',
+            '- Use concise bullet points or short fragments.',
+            '- If the user references vault files or notes, include those names.',
             '',
             `Current summary:\n${summaryText}`,
             '',
@@ -1264,30 +1310,44 @@ model: "${this.modelSelect?.value || this.plugin.settings.defaultModel}"`;
         return text.substring(0, maxChars) + '...';
     }
 
-    async renderMessage(role, content) {
-        const messageDiv = this.outputElement.createDiv(`ollama-message ollama-${role}`);
-        
-        const headerDiv = messageDiv.createDiv('ollama-message-header');
-        const roleSpan = headerDiv.createSpan({ text: role === 'user' ? 'You: ' : 'Ollama: ' });
-        roleSpan.addClass('ollama-role');
-        
-        // Add copy button
-        const copyButton = headerDiv.createEl('button', {
-            text: 'copy',
+    // Copy button helpers
+    _createCopyButton(container) {
+        const btn = container.createEl('button', {
             cls: 'ollama-copy-button',
             attr: { 'aria-label': 'Copy message', 'title': 'Copy to clipboard' }
         });
-        copyButton.addEventListener('click', async () => {
-            await navigator.clipboard.writeText(content);
-            copyButton.setText('✓');
+        btn.appendChild(this._svgIcon(['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z']));
+        btn.insertAdjacentText('beforeend', ' Copy');
+        return btn;
+    }
+
+    setupCopyButton(btn, text) {
+        btn.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = '';
+            btn.appendChild(this._svgIcon('M20 6L9 17l-5-5'));
+            btn.insertAdjacentText('beforeend', ' Copied');
             setTimeout(() => {
-                copyButton.setText('copy');
+                btn.textContent = '';
+                btn.appendChild(this._svgIcon(['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z']));
+                btn.insertAdjacentText('beforeend', ' Copy');
             }, 1500);
         });
+    }
+
+    async renderMessage(role, content) {
+        const messageDiv = this.outputElement.createDiv(`ollama-message ollama-${role}`);
+        const bubble = messageDiv.createDiv('ollama-bubble');
         
-        const contentDiv = messageDiv.createDiv('ollama-content');
+        const headerDiv = bubble.createDiv('ollama-message-header');
+        headerDiv.createSpan({ text: role === 'user' ? 'You' : 'Ollama', cls: 'ollama-role' });
         
-        // Render markdown for assistant messages, plain text for user messages
+        // Always-visible copy button with icon
+        const copyButton = this._createCopyButton(headerDiv);
+        this.setupCopyButton(copyButton, content);
+        
+        const contentDiv = bubble.createDiv('ollama-content');
+        
         if (role === 'assistant') {
             await MarkdownRenderer.renderMarkdown(
                 content,

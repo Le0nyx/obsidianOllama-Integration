@@ -1,71 +1,205 @@
+/* ============================================================
+   Ollama Sidechat — Premium Dark-Mode-First Theme
+   ============================================================ */
+
+/* --- Design tokens ----------------------------------------- */
+:root {
+    --oc-accent-h: 230;
+    --oc-accent-s: 75%;
+    --oc-accent-l: 60%;
+    --oc-accent: hsl(var(--oc-accent-h), var(--oc-accent-s), var(--oc-accent-l));
+    --oc-accent-dim: hsl(var(--oc-accent-h), var(--oc-accent-s), 45%);
+    --oc-accent-glow: hsla(var(--oc-accent-h), var(--oc-accent-s), var(--oc-accent-l), 0.25);
+
+    --oc-surface-0: var(--background-primary);
+    --oc-surface-1: var(--background-secondary);
+    --oc-surface-2: var(--background-modifier-border);
+    --oc-surface-glass: hsla(0, 0%, 100%, 0.04);
+    --oc-surface-glass-border: hsla(0, 0%, 100%, 0.08);
+
+    --oc-text: var(--text-normal);
+    --oc-text-muted: var(--text-muted);
+    --oc-text-on-accent: #fff;
+
+    --oc-radius-sm: 6px;
+    --oc-radius-md: 10px;
+    --oc-radius-lg: 16px;
+    --oc-radius-xl: 20px;
+    --oc-radius-pill: 9999px;
+
+    --oc-shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+    --oc-shadow-md: 0 4px 12px rgba(0,0,0,0.25);
+    --oc-shadow-lg: 0 8px 24px rgba(0,0,0,0.3);
+
+    --oc-transition-fast: 150ms ease;
+    --oc-transition: 250ms ease;
+    --oc-transition-slow: 400ms ease;
+}
+
+/* --- Keyframes --------------------------------------------- */
+@keyframes oc-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes oc-pulse-ring {
+    0%   { box-shadow: 0 0 0 0 hsla(140, 70%, 50%, 0.55); }
+    70%  { box-shadow: 0 0 0 6px hsla(140, 70%, 50%, 0); }
+    100% { box-shadow: 0 0 0 0 hsla(140, 70%, 50%, 0); }
+}
+
+@keyframes oc-pulse-ring-red {
+    0%   { box-shadow: 0 0 0 0 hsla(0, 70%, 50%, 0.55); }
+    70%  { box-shadow: 0 0 0 6px hsla(0, 70%, 50%, 0); }
+    100% { box-shadow: 0 0 0 0 hsla(0, 70%, 50%, 0); }
+}
+
+@keyframes oc-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes oc-interrupt-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.65; }
+}
+
+/* --- Container --------------------------------------------- */
 .ollama-side-container {
-    padding: 10px;
     display: flex;
     flex-direction: column;
     height: 100%;
+    padding: 12px;
+    gap: 10px;
+    background: var(--oc-surface-0);
+    font-family: var(--font-interface);
+    color: var(--oc-text);
 }
 
+/* --- Header ------------------------------------------------ */
 .ollama-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--background-modifier-border);
-    margin-bottom: 10px;
-    padding-bottom: 10px;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: var(--oc-surface-glass);
+    border: 1px solid var(--oc-surface-glass-border);
+    border-radius: var(--oc-radius-md);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    flex-shrink: 0;
 }
 
 .ollama-header-left h3 {
     margin: 0;
+    font-size: 0.95em;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: linear-gradient(135deg, var(--oc-accent), hsl(calc(var(--oc-accent-h) + 30), var(--oc-accent-s), var(--oc-accent-l)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .ollama-header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
 }
 
-/* Chat selector dropdown */
+/* --- Icon buttons (shared) --------------------------------- */
+.ollama-icon-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--oc-radius-sm);
+    background: transparent;
+    color: var(--oc-text-muted);
+    cursor: pointer;
+    transition: background var(--oc-transition-fast), color var(--oc-transition-fast), transform var(--oc-transition-fast);
+}
+
+.ollama-icon-btn:hover {
+    background: var(--oc-surface-2);
+    color: var(--oc-text);
+    transform: scale(1.08);
+}
+
+.ollama-icon-btn:active {
+    transform: scale(0.95);
+}
+
+.ollama-icon-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* New-chat accent variant */
+.ollama-icon-btn--accent {
+    background: var(--oc-accent);
+    color: var(--oc-text-on-accent);
+}
+
+.ollama-icon-btn--accent:hover {
+    background: var(--oc-accent-dim);
+    color: var(--oc-text-on-accent);
+}
+
+/* --- Chat selector dropdown ------------------------------- */
 .ollama-chat-selector-container {
     position: relative;
 }
 
 .ollama-chat-search {
-    width: 140px;
-    padding: 4px 8px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background: var(--background-primary);
-    font-size: 0.85em;
+    width: 120px;
+    padding: 5px 8px;
+    border: 1px solid var(--oc-surface-2);
+    border-radius: var(--oc-radius-sm);
+    background: var(--oc-surface-1);
+    color: var(--oc-text);
+    font-size: 0.8em;
+    transition: border-color var(--oc-transition-fast), box-shadow var(--oc-transition-fast);
 }
 
 .ollama-chat-search:focus {
-    border-color: var(--interactive-accent);
+    border-color: var(--oc-accent);
+    box-shadow: 0 0 0 2px var(--oc-accent-glow);
     outline: none;
 }
 
 .ollama-chat-list {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 4px);
     left: 0;
     right: 0;
-    max-height: 300px;
+    min-width: 220px;
+    max-height: 320px;
     overflow-y: auto;
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 100;
-    min-width: 200px;
+    background: var(--oc-surface-1);
+    border: 1px solid var(--oc-surface-2);
+    border-radius: var(--oc-radius-md);
+    box-shadow: var(--oc-shadow-lg);
+    z-index: 120;
+    animation: oc-fade-in var(--oc-transition-fast);
 }
 
 .ollama-chat-item {
     padding: 8px 12px;
     cursor: pointer;
-    font-size: 0.85em;
-    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 0.82em;
+    border-bottom: 1px solid var(--oc-surface-glass-border);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: background var(--oc-transition-fast);
 }
 
 .ollama-chat-item:last-child {
@@ -73,11 +207,11 @@
 }
 
 .ollama-chat-item:hover {
-    background: var(--background-secondary);
+    background: var(--oc-accent-glow);
 }
 
 .ollama-chat-item-empty {
-    color: var(--text-muted);
+    color: var(--oc-text-muted);
     cursor: default;
 }
 
@@ -85,219 +219,303 @@
     background: transparent;
 }
 
-/* New chat button */
-.ollama-new-chat-button {
-    width: 28px;
-    height: 28px;
-    padding: 0;
+/* --- Controls section -------------------------------------- */
+.ollama-controls-section {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    font-size: 1.2em;
-    font-weight: bold;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--oc-surface-glass);
+    border: 1px solid var(--oc-surface-glass-border);
+    border-radius: var(--oc-radius-md);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    flex-shrink: 0;
 }
 
-.ollama-new-chat-button:hover {
-    opacity: 0.9;
-}
-
-/* Open in new tab button */
-.ollama-open-tab-button {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.1em;
-    background: var(--background-modifier-border);
-    color: var(--text-normal);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.ollama-open-tab-button:hover {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-/* Context indicator */
-.ollama-context-indicator {
-    padding: 6px 10px;
-    margin-bottom: 10px;
-    background: var(--background-secondary);
-    border-radius: 4px;
-    font-size: 0.85em;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.ollama-context-row {
+/* Status dot + label */
+.ollama-status-container {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.ollama-context-text {
-    color: var(--text-normal);
+.ollama-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
-.ollama-context-none {
-    color: var(--text-muted);
+.ollama-status-dot--running {
+    background: hsl(140, 70%, 48%);
+    animation: oc-pulse-ring 2s infinite;
 }
 
-.ollama-controls-section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 15px;
-    padding: 10px;
-    background: var(--background-secondary);
-    border-radius: 5px;
+.ollama-status-dot--stopped {
+    background: hsl(0, 60%, 50%);
+    animation: oc-pulse-ring-red 3s infinite;
 }
 
-.ollama-status-container {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.ollama-status-label {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--oc-text-muted);
 }
 
-.ollama-status {
-    font-weight: bold;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 0.8em;
+/* Separator dot between control groups */
+.ollama-controls-sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--oc-surface-2);
+    flex-shrink: 0;
 }
 
-.ollama-status-running {
-    background-color: var(--color-green);
-    color: white;
-}
-
-.ollama-status-stopped {
-    background-color: var(--color-red);
-    color: white;
-}
-
-.ollama-start-stop-button {
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-    border-radius: 3px;
-    padding: 6px 12px;
-    cursor: pointer;
-    font-size: 0.9em;
-}
-
+/* Model container */
 .ollama-model-container {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
 }
 
+.ollama-model-container > span {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--oc-text-muted);
+}
+
+.ollama-model-select {
+    padding: 3px 6px;
+    background: var(--oc-surface-1);
+    border: 1px solid var(--oc-surface-2);
+    border-radius: var(--oc-radius-sm);
+    color: var(--oc-text);
+    font-size: 0.8em;
+    max-width: 140px;
+    transition: border-color var(--oc-transition-fast);
+}
+
+.ollama-model-select:focus {
+    border-color: var(--oc-accent);
+    outline: none;
+}
+
+/* Vault browse & memory toggles */
 .ollama-vault-browse-container {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 5px;
+}
+
+.ollama-vault-browse-container > span {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--oc-text-muted);
 }
 
 .ollama-vault-browse-toggle {
     border: none;
-    border-radius: 3px;
-    padding: 4px 10px;
+    border-radius: var(--oc-radius-pill);
+    padding: 2px 10px;
     cursor: pointer;
-    font-size: 0.8em;
-    font-weight: 600;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    transition: background var(--oc-transition-fast), color var(--oc-transition-fast), box-shadow var(--oc-transition-fast);
 }
 
 .ollama-vault-browse-toggle.is-enabled {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
+    background: var(--oc-accent);
+    color: var(--oc-text-on-accent);
+    box-shadow: 0 0 0 2px var(--oc-accent-glow);
 }
 
 .ollama-vault-browse-toggle.is-disabled {
-    background: var(--background-modifier-border);
-    color: var(--text-normal);
+    background: var(--oc-surface-2);
+    color: var(--oc-text-muted);
 }
 
-.ollama-model-select {
-    flex-grow: 1;
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 3px;
-    padding: 4px 8px;
+.ollama-vault-browse-toggle:hover {
+    filter: brightness(1.15);
 }
 
-.ollama-refresh-button {
-    background: var(--background-modifier-border);
-    border: none;
-    border-radius: 3px;
-    padding: 4px 8px;
-    cursor: pointer;
-    font-size: 0.8em;
+/* --- Context indicator ------------------------------------- */
+.ollama-context-indicator {
+    padding: 6px 10px;
+    background: var(--oc-surface-glass);
+    border: 1px solid var(--oc-surface-glass-border);
+    border-radius: var(--oc-radius-sm);
+    font-size: 0.78em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    flex-shrink: 0;
 }
 
+.ollama-context-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ollama-context-text {
+    color: var(--oc-text-muted);
+}
+
+.ollama-context-active {
+    color: var(--oc-accent);
+    font-weight: 600;
+}
+
+.ollama-context-none {
+    color: var(--oc-text-muted);
+    opacity: 0.5;
+}
+
+/* --- Messages area ----------------------------------------- */
 .ollama-output {
-    flex-grow: 1;
+    flex: 1 1 0;
     overflow-y: auto;
-    margin-bottom: 10px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 5px;
-    padding: 10px;
-    max-height: 60vh;
+    padding: 8px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
 }
 
+/* Custom scrollbar */
+.ollama-output::-webkit-scrollbar {
+    width: 5px;
+}
+
+.ollama-output::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.ollama-output::-webkit-scrollbar-thumb {
+    background: var(--oc-surface-2);
+    border-radius: var(--oc-radius-pill);
+}
+
+.ollama-output::-webkit-scrollbar-thumb:hover {
+    background: var(--oc-text-muted);
+}
+
+/* --- Message bubbles (WhatsApp style) ---------------------- */
 .ollama-message {
-    margin-bottom: 10px;
-    padding: 8px;
-    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    max-width: 88%;
+    animation: oc-fade-in var(--oc-transition) both;
 }
 
+/* User: right-aligned */
 .ollama-message.ollama-user {
-    background-color: var(--background-primary);
-    border-left: 3px solid var(--interactive-accent);
+    align-self: flex-end;
 }
 
+.ollama-message.ollama-user .ollama-bubble {
+    background: linear-gradient(135deg, var(--oc-accent), var(--oc-accent-dim));
+    color: var(--oc-text-on-accent);
+    border-radius: var(--oc-radius-lg) var(--oc-radius-lg) var(--oc-radius-sm) var(--oc-radius-lg);
+    box-shadow: var(--oc-shadow-sm);
+}
+
+/* Assistant: left-aligned */
 .ollama-message.ollama-assistant {
-    background-color: var(--background-secondary);
-    border-left: 3px solid var(--text-accent);
+    align-self: flex-start;
 }
 
+.ollama-message.ollama-assistant .ollama-bubble {
+    background: var(--oc-surface-1);
+    border: 1px solid var(--oc-surface-glass-border);
+    color: var(--oc-text);
+    border-radius: var(--oc-radius-lg) var(--oc-radius-lg) var(--oc-radius-lg) var(--oc-radius-sm);
+    box-shadow: var(--oc-shadow-sm);
+}
+
+.ollama-bubble {
+    padding: 10px 14px;
+    position: relative;
+}
+
+/* Message header (role label + copy btn) */
 .ollama-message-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
+    gap: 8px;
 }
 
 .ollama-role {
-    font-weight: bold;
-    margin-right: 5px;
+    font-weight: 700;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
 }
 
+/* --- Copy button — always visible, prominent --------------- */
 .ollama-copy-button {
-    padding: 2px 6px;
-    font-size: 0.9em;
-    background: var(--background-modifier-border);
-    border: none;
-    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 0.72em;
+    font-weight: 600;
+    background: hsla(0, 0%, 100%, 0.1);
+    border: 1px solid hsla(0, 0%, 100%, 0.12);
+    border-radius: var(--oc-radius-sm);
+    color: inherit;
     cursor: pointer;
-    opacity: 0.6;
-    transition: opacity 0.2s;
+    opacity: 0.75;
+    transition: opacity var(--oc-transition-fast), background var(--oc-transition-fast), transform var(--oc-transition-fast);
+    flex-shrink: 0;
 }
 
 .ollama-copy-button:hover {
     opacity: 1;
-    background: var(--interactive-accent);
+    background: hsla(0, 0%, 100%, 0.18);
+    transform: scale(1.05);
 }
 
+.ollama-copy-button:active {
+    transform: scale(0.95);
+}
+
+.ollama-copy-button svg {
+    width: 12px;
+    height: 12px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* Assistant copy button needs different colors (on dark surface) */
+.ollama-message.ollama-assistant .ollama-copy-button {
+    background: var(--oc-surface-2);
+    border-color: var(--oc-surface-glass-border);
+    color: var(--oc-text-muted);
+}
+
+.ollama-message.ollama-assistant .ollama-copy-button:hover {
+    background: var(--oc-accent-glow);
+    color: var(--oc-accent);
+}
+
+/* --- Message content --------------------------------------- */
 .ollama-content {
     display: block;
     white-space: pre-wrap;
@@ -306,42 +524,194 @@
     user-select: text;
     cursor: text;
     font-family: var(--font-text);
-    line-height: 1.6;
+    font-size: 0.9em;
+    line-height: 1.65;
 }
 
+/* Make rendered markdown inside assistant messages inherit colors */
+.ollama-message.ollama-assistant .ollama-content p {
+    margin: 0.4em 0;
+}
+
+.ollama-message.ollama-assistant .ollama-content pre {
+    background: rgba(0,0,0,0.25);
+    border-radius: var(--oc-radius-sm);
+    padding: 8px 10px;
+    overflow-x: auto;
+    font-size: 0.88em;
+}
+
+.ollama-message.ollama-assistant .ollama-content code {
+    font-size: 0.9em;
+}
+
+.ollama-message.ollama-assistant .ollama-content ul,
+.ollama-message.ollama-assistant .ollama-content ol {
+    padding-left: 1.4em;
+    margin: 0.3em 0;
+}
+
+/* User message content on accent gradient — ensure readability */
+.ollama-message.ollama-user .ollama-content {
+    color: var(--oc-text-on-accent);
+}
+
+.ollama-message.ollama-user .ollama-content code {
+    background: hsla(0, 0%, 0%, 0.2);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+/* --- Input area -------------------------------------------- */
 .ollama-input-container {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.ollama-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--oc-surface-1);
+    border: 1px solid var(--oc-surface-2);
+    border-radius: var(--oc-radius-md);
+    transition: border-color var(--oc-transition-fast), box-shadow var(--oc-transition-fast);
+}
+
+.ollama-input-row:focus-within {
+    border-color: var(--oc-accent);
+    box-shadow: 0 0 0 2px var(--oc-accent-glow);
 }
 
 .ollama-textarea {
-    flex-grow: 1;
-    resize: vertical;
-    font-family: inherit;
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 3px;
-    padding: 8px;
+    flex: 1;
+    resize: none;
+    border: none;
+    background: transparent;
+    color: var(--oc-text);
+    font-family: var(--font-text);
+    font-size: 0.9em;
+    line-height: 1.5;
+    padding: 4px 2px;
+    outline: none;
+    min-height: 24px;
+    max-height: 140px;
+}
+
+.ollama-textarea::placeholder {
+    color: var(--oc-text-muted);
+    opacity: 0.6;
 }
 
 .ollama-textarea:disabled {
-    opacity: 0.6;
+    opacity: 0.4;
     cursor: not-allowed;
 }
 
+/* Send button inside input row */
+.ollama-send-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--oc-radius-sm);
+    background: var(--oc-accent);
+    color: var(--oc-text-on-accent);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background var(--oc-transition-fast), transform var(--oc-transition-fast);
+}
+
+.ollama-send-btn:hover {
+    background: var(--oc-accent-dim);
+    transform: scale(1.08);
+}
+
+.ollama-send-btn:active {
+    transform: scale(0.92);
+}
+
+.ollama-send-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.ollama-send-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* --- Interrupt button -------------------------------------- */
 .ollama-interrupt-button {
     align-self: flex-end;
-    background-color: var(--color-red);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: hsl(0, 65%, 50%);
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 6px 12px;
+    border-radius: var(--oc-radius-pill);
+    padding: 5px 14px;
     cursor: pointer;
-    font-size: 0.85em;
-    font-weight: 500;
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    animation: oc-interrupt-pulse 1.5s ease-in-out infinite;
+    transition: background var(--oc-transition-fast);
 }
 
 .ollama-interrupt-button:hover {
-    opacity: 0.85;
+    background: hsl(0, 65%, 42%);
+    animation: none;
+}
+
+.ollama-interrupt-button svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* --- Open-in-tab button ------------------------------------ */
+.ollama-open-tab-button {
+    /* Uses .ollama-icon-btn base */
+}
+
+/* --- Streaming indicator ----------------------------------- */
+.ollama-streaming-cursor::after {
+    content: '▍';
+    animation: oc-blink 1s step-start infinite;
+    color: var(--oc-accent);
+    font-weight: 300;
+}
+
+@keyframes oc-blink {
+    50% { opacity: 0; }
+}
+
+/* --- Utility ----------------------------------------------- */
+.ollama-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    border: 0;
 }
