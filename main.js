@@ -8,6 +8,9 @@ const VAULT_BROWSE_MAX_LINKED_FILES = 5;
 const VAULT_BROWSE_MAX_RELATED_FILES = 5;
 const VAULT_BROWSE_MAX_RELATED_SCAN = 400;
 const VAULT_BROWSE_MAX_FILE_CHARS = 2000;
+const VAULT_BROWSE_MAX_CONTENT_SCAN = 80;
+const VAULT_BROWSE_MAX_CONTENT_SCAN_CHARS = 20000;
+const VAULT_BROWSE_MAX_DAILY_NOTES = 2;
 const VAULT_BROWSE_MAX_TOTAL_CHARS = 8000;
 const VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS = 4000;
 const VAULT_BROWSE_MAX_TOKENS = 30;
@@ -842,6 +845,10 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     async buildPrompt(userPrompt, aiSearchQueries = []) {
         let contextBlock = '';
         
+        // Add current date and time so the AI knows what "today" is
+        const now = new Date();
+        contextBlock += `[SYSTEM INFO]\nCurrent Date and Time: ${now.toLocaleString()}\nToday's Date: ${now.toISOString().split('T')[0]}\nDay of Week: ${now.toLocaleDateString(undefined, {weekday: 'long'})}\n[END SYSTEM INFO]\n\n`;
+        
         // Add custom instructions if provided
         if (this.plugin.settings.customInstructions && this.plugin.settings.customInstructions.trim()) {
             contextBlock += `[System Instructions]\n${this.plugin.settings.customInstructions.trim()}\n\n`;
@@ -921,6 +928,15 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             contextParts.push(`Vault Structure Overview:\n${this.plugin.settings.vaultStructure.trim()}`);
         }
 
+        const searchTokens = this.buildSearchTokens({
+            userPrompt,
+            recentTurnsContext,
+            activeContent,
+            aiSearchQueries,
+            activeFile,
+            chatMemorySummary: this.chatMemorySummary
+        });
+
         const linkedFiles = this.extractLinkedFiles(activeFile, activeContent)
             .slice(0, VAULT_BROWSE_MAX_LINKED_FILES);
 
@@ -932,7 +948,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             const linkedBlock = await this.buildFileExcerptsBlock(
                 linkedFiles,
                 'Linked file excerpts',
-                [],
+                searchTokens,
                 totalChars
             );
 
@@ -943,24 +959,51 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             totalChars = linkedBlock.totalChars;
         }
 
-        const tokenSource = [
-            userPrompt || '',
-            recentTurnsContext || '',
-            activeContent ? activeContent.substring(0, VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS) : ''
-        ].join(' ');
+        const backlinkFiles = this.extractBacklinkedFiles(activeFile)
+            .filter(file => !excludedPaths.has(file.path))
+            .slice(0, VAULT_BROWSE_MAX_LINKED_FILES);
 
-        const searchTokens = this.extractSearchTokens(tokenSource);
+        backlinkFiles.forEach(file => excludedPaths.add(file.path));
 
-        // Add the AI's search queries directly
-        if (aiSearchQueries && aiSearchQueries.length > 0) {
-            for (const query of aiSearchQueries) {
-                if (query && typeof query === 'string' && query.trim().length > 0) {
-                    searchTokens.push(query.trim());
+        if (backlinkFiles.length > 0) {
+            const backlinkBlock = await this.buildFileExcerptsBlock(
+                backlinkFiles,
+                'Backlinked note excerpts',
+                searchTokens,
+                totalChars
+            );
+
+            if (backlinkBlock.block) {
+                contextParts.push(backlinkBlock.block);
+            }
+
+            totalChars = backlinkBlock.totalChars;
+        }
+
+        const wantsDailyNotes = this.shouldIncludeDailyNotes(userPrompt, recentTurnsContext, aiSearchQueries);
+        if (wantsDailyNotes) {
+            const dailyNoteFiles = this.findDailyNoteCandidates(searchTokens, activeFile, excludedPaths)
+                .slice(0, VAULT_BROWSE_MAX_DAILY_NOTES);
+
+            dailyNoteFiles.forEach(file => excludedPaths.add(file.path));
+
+            if (dailyNoteFiles.length > 0) {
+                const dailyBlock = await this.buildFileExcerptsBlock(
+                    dailyNoteFiles,
+                    'Daily note excerpts',
+                    searchTokens,
+                    totalChars
+                );
+
+                if (dailyBlock.block) {
+                    contextParts.push(dailyBlock.block);
                 }
+
+                totalChars = dailyBlock.totalChars;
             }
         }
 
-        const relatedFiles = this.findRelatedFiles(activeFile, searchTokens, excludedPaths);
+        const relatedFiles = await this.findRelatedFiles(activeFile, searchTokens, excludedPaths);
 
         if (relatedFiles.length > 0 && totalChars < VAULT_BROWSE_MAX_TOTAL_CHARS) {
             const relatedBlock = await this.buildFileExcerptsBlock(
@@ -982,6 +1025,120 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         return `Vault context:\n\n${contextParts.join('\n\n')}\n\n---\n\n`;
     }
 
+    buildSearchTokens({ userPrompt, recentTurnsContext, activeContent, aiSearchQueries, activeFile, chatMemorySummary }) {
+        const tokens = [];
+
+        if (Array.isArray(aiSearchQueries) && aiSearchQueries.length > 0) {
+            this.appendSearchTokens(tokens, aiSearchQueries.join(' '));
+        }
+
+        this.appendSearchTokens(tokens, userPrompt || '');
+        this.appendSearchTokens(tokens, recentTurnsContext || '');
+        this.appendSearchTokens(tokens, chatMemorySummary || '');
+
+        if (activeFile?.basename) {
+            this.appendSearchTokens(tokens, activeFile.basename);
+        }
+
+        if (activeContent) {
+            this.appendSearchTokens(tokens, activeContent.substring(0, VAULT_BROWSE_MAX_TOKEN_SOURCE_CHARS));
+        }
+
+        return tokens;
+    }
+
+    shouldIncludeDailyNotes(userPrompt, recentTurnsContext, aiSearchQueries = []) {
+        const combined = [userPrompt || '', recentTurnsContext || '', aiSearchQueries.join(' ')].join(' ').toLowerCase();
+        return (
+            combined.includes('daily note') ||
+            combined.includes('daily recap') ||
+            combined.includes('journal') ||
+            combined.includes('today') ||
+            combined.includes('yesterday')
+        );
+    }
+
+    findDailyNoteCandidates(searchTokens, activeFile, excludedPaths) {
+        const dateTokens = this.extractDateTokens(searchTokens);
+        if (dateTokens.length === 0) return [];
+
+        const files = this.app.vault.getMarkdownFiles();
+        const candidates = [];
+
+        for (const file of files) {
+            if (excludedPaths?.has(file.path)) continue;
+            if (activeFile && file.path === activeFile.path) continue;
+
+            const lowerPath = file.path.toLowerCase();
+            const lowerBase = file.basename.toLowerCase();
+            let score = 0;
+
+            for (const token of dateTokens) {
+                const lowerToken = token.toLowerCase();
+                if (lowerBase === lowerToken) score += 5;
+                if (lowerPath.includes(lowerToken)) score += 2;
+            }
+
+            if (lowerPath.includes('/daily') || lowerPath.includes('daily ')) score += 1;
+            if (lowerPath.includes('/journal') || lowerPath.includes('journal ')) score += 1;
+
+            if (score > 0) {
+                candidates.push({ file, score });
+            }
+        }
+
+        candidates.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return (b.file.stat?.mtime || 0) - (a.file.stat?.mtime || 0);
+        });
+
+        return candidates.map(item => item.file);
+    }
+
+    extractDateTokens(tokens) {
+        if (!tokens || tokens.length === 0) return [];
+
+        const dateMatches = [];
+        const patterns = [
+            /^\d{4}[-_.]\d{2}[-_.]\d{2}$/,
+            /^\d{2}[-.]\d{2}[-.]\d{4}$/,
+            /^\d{8}$/
+        ];
+
+        for (const token of tokens) {
+            if (patterns.some(pattern => pattern.test(token))) {
+                dateMatches.push(token);
+            }
+        }
+
+        return dateMatches;
+    }
+
+    appendSearchTokens(targetTokens, sourceText) {
+        if (!sourceText || !sourceText.trim()) return targetTokens;
+
+        const extraTokens = this.extractSearchTokens(sourceText);
+        if (extraTokens.length === 0) return targetTokens;
+
+        const seen = new Set(targetTokens);
+        for (const token of extraTokens) {
+            if (targetTokens.length >= VAULT_BROWSE_MAX_TOKENS) break;
+            if (!seen.has(token)) {
+                seen.add(token);
+                targetTokens.push(token);
+            }
+        }
+
+        return targetTokens;
+    }
+
+    async readVaultFile(file) {
+        if (this.app.vault.cachedRead) {
+            return await this.app.vault.cachedRead(file);
+        }
+        return await this.app.vault.read(file);
+    }
+
     async buildFileExcerptsBlock(files, heading, searchTokens, totalChars) {
         if (!files || files.length === 0 || totalChars >= VAULT_BROWSE_MAX_TOTAL_CHARS) {
             return { block: '', totalChars };
@@ -989,7 +1146,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
 
         // Parallel reads for speed
         const readResults = await Promise.allSettled(
-            files.map(file => this.app.vault.read(file).then(content => ({ file, content })))
+            files.map(file => this.readVaultFile(file).then(content => ({ file, content })))
         );
 
         let contentBlock = `${heading}:\n`;
@@ -1104,7 +1261,10 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             const y = dateObj.getFullYear();
             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
             const d = String(dateObj.getDate()).padStart(2, '0');
-            const formats = [`${y}-${m}-${d}`, `${y}${m}${d}`, `${y}_${m}_${d}`];
+            const formats = [
+                `${y}-${m}-${d}`, `${y}${m}${d}`, `${y}_${m}_${d}`,
+                `${d}-${m}-${y}`, `${d}.${m}.${y}`, `${y}.${m}.${d}`
+            ];
             for (const format of formats) {
                 if (!seen.has(format)) {
                     seen.add(format);
@@ -1141,15 +1301,19 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     async generateSearchQueries(userPrompt, model, vaultStructure) {
         if (!this.plugin.settings.enableVaultBrowse) return [];
 
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
         const systemPrompt = `You are an internal search query generator for an Obsidian vault.
 The user is asking a question. To help answer it, you must decide which files to search for.
+Today's Date is: ${dateStr}
 Vault Structure Overview:
 ${vaultStructure || 'Not provided'}
 
-Identify up to 3 specific file names or exact search phrases you want to look up based on the user's query.
+Identify up to 3 specific file names, folder paths, or exact search phrases you want to look up based on the user's query.
 Return ONLY a JSON array of strings. Do not include markdown formatting or explanations.
 User Query: "${userPrompt}"
-Example response: ["Project Proposal", "daily note"]`;
+Example response: ["Project Proposal", "daily recap", "meeting notes"]`;
 
         try {
             const response = await fetch(`${this.plugin.settings.ollamaUrl}/api/generate`, {
@@ -1178,31 +1342,96 @@ Example response: ["Project Proposal", "daily note"]`;
         return [];
     }
 
-    findRelatedFiles(activeFile, searchTokens, excludedPaths) {
-        if (!searchTokens || searchTokens.length === 0) return [];
+    getPriorityPathsFromStructure() {
+        if (!this.plugin.settings.vaultStructure) return [];
 
-        let files = [...this.app.vault.getMarkdownFiles()];
-        let priorityPaths = [];
-        
-        if (this.plugin.settings.vaultStructure) {
-            const structureLines = this.plugin.settings.vaultStructure.split('\n');
-            priorityPaths = structureLines
-                .filter(line => line.trim().startsWith('- ') || line.trim().startsWith('* '))
-                .map(line => line.replace(/^[-*]\s+/, '').split(' ')[0].trim())
-                .filter(p => p.length > 0 && p !== 'Root');
-            
-            if (priorityPaths.length > 0) {
-                files.sort((a, b) => {
-                    const aIsPriority = priorityPaths.some(p => a.path.startsWith(p));
-                    const bIsPriority = priorityPaths.some(p => b.path.startsWith(p));
-                    if (aIsPriority && !bIsPriority) return -1;
-                    if (!aIsPriority && bIsPriority) return 1;
-                    return 0;
-                });
+        const structureLines = this.plugin.settings.vaultStructure.split('\n');
+        return structureLines
+            .filter(line => line.trim().startsWith('- ') || line.trim().startsWith('* '))
+            .map(line => {
+                let p = line.replace(/^[-*]\s+/, '').trim();
+
+                const containsIndex = p.indexOf(' (Contains');
+                if (containsIndex !== -1) {
+                    p = p.substring(0, containsIndex).trim();
+                }
+
+                const descIndex = p.indexOf(':');
+                if (descIndex !== -1) {
+                    p = p.substring(0, descIndex).trim();
+                }
+
+                p = p.replace(/\\/g, '/');
+                return p;
+            })
+            .filter(p => p.length > 0 && p !== 'Root' && p !== 'Root (/)' && p !== 'Root (/)');
+    }
+
+    getFileScanPriority(file, activeFile, priorityPaths) {
+        let score = 0;
+
+        const activeFolder = activeFile?.parent?.path;
+        if (activeFolder && file.path.startsWith(`${activeFolder}/`)) {
+            score += 2;
+        }
+
+        if (priorityPaths && priorityPaths.length > 0) {
+            if (priorityPaths.some(p => file.path.startsWith(p))) {
+                score += 1;
             }
         }
 
-        const scored = [];
+        return score;
+    }
+
+    compareFileScanPriority(a, b, activeFile, priorityPaths) {
+        const aPriority = this.getFileScanPriority(a, activeFile, priorityPaths);
+        const bPriority = this.getFileScanPriority(b, activeFile, priorityPaths);
+
+        if (aPriority !== bPriority) {
+            return bPriority - aPriority;
+        }
+
+        return (b.stat?.mtime || 0) - (a.stat?.mtime || 0);
+    }
+
+    sortFilesForScan(files, activeFile, priorityPaths) {
+        return files.sort((a, b) => this.compareFileScanPriority(a, b, activeFile, priorityPaths));
+    }
+
+    async scoreFileContent(file, searchTokens) {
+        if (!searchTokens || searchTokens.length === 0) return 0;
+
+        let content = '';
+        try {
+            content = await this.readVaultFile(file);
+        } catch (e) {
+            return 0;
+        }
+
+        if (!content) return 0;
+
+        const lowerContent = content.toLowerCase().substring(0, VAULT_BROWSE_MAX_CONTENT_SCAN_CHARS);
+        let uniqueHits = 0;
+
+        for (const token of searchTokens) {
+            if (lowerContent.includes(token)) {
+                uniqueHits += 1;
+            }
+        }
+
+        if (uniqueHits === 0) return 0;
+        return Math.min(uniqueHits * 2, 12);
+    }
+
+    async findRelatedFiles(activeFile, searchTokens, excludedPaths) {
+        if (!searchTokens || searchTokens.length === 0) return [];
+
+        const priorityPaths = this.getPriorityPathsFromStructure();
+        let files = [...this.app.vault.getMarkdownFiles()];
+        files = this.sortFilesForScan(files, activeFile, priorityPaths);
+
+        const candidates = [];
         let scanned = 0;
 
         for (const file of files) {
@@ -1219,15 +1448,46 @@ Example response: ["Project Proposal", "daily note"]`;
 
             const cache = this.app.metadataCache.getFileCache(file);
             const score = this.scoreFile(file, cache, searchTokens, priorityPaths);
-
-            if (score >= VAULT_BROWSE_RELATED_MIN_SCORE) {
-                scored.push({ file, score });
-                // Early exit once we have enough candidates
-                if (scored.length >= VAULT_BROWSE_MAX_RELATED_FILES * 2) break;
-            }
+            candidates.push({ file, score });
         }
 
-        scored.sort((a, b) => b.score - a.score);
+        if (candidates.length === 0) return [];
+
+        let scored = candidates.filter(item => item.score >= VAULT_BROWSE_RELATED_MIN_SCORE);
+        const hasStrongMatch = scored.some(item => item.score >= 3);
+
+        if (scored.length < VAULT_BROWSE_MAX_RELATED_FILES || !hasStrongMatch) {
+            const contentCandidates = candidates
+                .filter(item => item.score < VAULT_BROWSE_RELATED_MIN_SCORE)
+                .sort((a, b) => this.compareFileScanPriority(a.file, b.file, activeFile, priorityPaths))
+                .slice(0, VAULT_BROWSE_MAX_CONTENT_SCAN);
+
+            const contentResults = await Promise.allSettled(
+                contentCandidates.map(async (item) => {
+                    const contentScore = await this.scoreFileContent(item.file, searchTokens);
+                    return { item, contentScore };
+                })
+            );
+
+            for (const result of contentResults) {
+                if (result.status !== 'fulfilled') continue;
+                const { item, contentScore } = result.value;
+                if (contentScore > 0) {
+                    item.score += contentScore;
+                }
+            }
+
+            scored = candidates.filter(item => item.score >= VAULT_BROWSE_RELATED_MIN_SCORE);
+        }
+
+        // Sort by score first, then by modification time (newest first) for tie-breakers
+        scored.sort((a, b) => {
+            if (b.score !== a.score) {
+                return b.score - a.score;
+            }
+            return (b.file.stat?.mtime || 0) - (a.file.stat?.mtime || 0);
+        });
+        
         return scored.slice(0, VAULT_BROWSE_MAX_RELATED_FILES).map(item => item.file);
     }
 
@@ -1338,6 +1598,23 @@ Example response: ["Project Proposal", "daily note"]`;
         }
 
         return files;
+    }
+
+    extractBacklinkedFiles(activeFile) {
+        if (!activeFile) return [];
+
+        const resolvedLinks = this.app.metadataCache.resolvedLinks || {};
+        const backlinks = [];
+
+        for (const [sourcePath, targets] of Object.entries(resolvedLinks)) {
+            if (!targets || !targets[activeFile.path]) continue;
+            const file = this.app.vault.getAbstractFileByPath(sourcePath);
+            if (file && file.extension === 'md') {
+                backlinks.push(file);
+            }
+        }
+
+        return backlinks;
     }
 
     buildChatMemoryBlock(summary) {
