@@ -263,6 +263,11 @@ class OllamaSideView extends ItemView {
         
         // Start automatic status checking
         this.startStatusChecking();
+
+        // Update context indicator when user switches notes
+        this._leafChangeRef = this.app.workspace.on('active-leaf-change', () => {
+            this.updateContextIndicator();
+        });
     }
 
     updateContextIndicator() {
@@ -311,10 +316,10 @@ class OllamaSideView extends ItemView {
         // Check immediately
         this.checkStatus();
         
-        // Then check every 10 seconds (not 2s — reduces network spam)
+        // Then check every 5 seconds
         this.statusCheckInterval = window.setInterval(() => {
             this.checkStatus();
-        }, 10000);
+        }, 5000);
     }
 
     stopStatusChecking() {
@@ -328,12 +333,16 @@ class OllamaSideView extends ItemView {
         const wasRunning = this.plugin.isOllamaRunning;
         await this.plugin.checkOllamaStatus();
         
-        // Only refresh models + UI when status actually changes
         if (wasRunning !== this.plugin.isOllamaRunning) {
+            // Status changed — full UI refresh
             if (this.plugin.isOllamaRunning) {
                 await this.plugin.refreshAvailableModels();
             }
             this.updateUI();
+        } else if (this.plugin.isOllamaRunning) {
+            // Still running — refresh models silently
+            await this.plugin.refreshAvailableModels();
+            this.populateModelDropdown();
         }
     }
 
@@ -580,7 +589,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             }
             
             // Scroll to bottom after loading all messages
-            this.outputElement.scrollTop = this.outputElement.scrollHeight;
+            this.scrollToBottom();
             
             this.currentChatFile = filePath;
             this.openInTabButton.style.display = 'inline-block';
@@ -751,9 +760,12 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             options.num_predict = this.plugin.settings.maxTokens;
         }
         
+        const systemPrompt = "You are a helpful AI assistant integrated directly into Obsidian. The user has provided context from their notes and chat history in the prompt. You MUST treat this provided text as their local files and screen. NEVER claim you cannot see their files or screen, because the file contents have been explicitly provided to you.";
+
         const requestBody = {
             model: model,
             prompt: fullPrompt,
+            system: systemPrompt,
             stream: true,
             options: options
         };
@@ -793,7 +805,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
                         fullResponse += json.response;
                         // Plain text update — no DOM teardown/rebuild
                         contentDiv.textContent = fullResponse;
-                        this.outputElement.scrollTop = this.outputElement.scrollHeight;
+                        this.scrollToBottom();
                     }
                 } catch (e) {
                     // Skip malformed JSON lines
@@ -810,28 +822,28 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             '',
             this
         );
-        this.outputElement.scrollTop = this.outputElement.scrollHeight;
+        this.scrollToBottom();
 
         this.abortController = null;
         return fullResponse;
     }
 
     async buildPrompt(userPrompt) {
-        let fullPrompt = '';
+        let contextBlock = '';
         
         // Add custom instructions if provided
         if (this.plugin.settings.customInstructions && this.plugin.settings.customInstructions.trim()) {
-            fullPrompt += this.plugin.settings.customInstructions.trim() + '\n\n';
+            contextBlock += `[System Instructions]\n${this.plugin.settings.customInstructions.trim()}\n\n`;
         }
 
         if (this.plugin.settings.enableChatMemory) {
             if (this.chatMemorySummary && this.chatMemorySummary.trim()) {
-                fullPrompt += `Chat memory summary:\n${this.chatMemorySummary.trim()}\n\n`;
+                contextBlock += `[Memory Summary]\n${this.chatMemorySummary.trim()}\n\n`;
             }
 
             const recentTurnsContext = this.buildRecentTurnsContext(userPrompt);
             if (recentTurnsContext) {
-                fullPrompt += recentTurnsContext;
+                contextBlock += `[Recent Chat History]\n${recentTurnsContext}\n\n`;
             }
         }
         
@@ -849,19 +861,22 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         // Add note context if enabled
         if (this.plugin.settings.includeNoteContext && activeFile && activeFile.extension === 'md' && activeContent) {
             this.contextNotePath = activeFile.path;
-            fullPrompt += `Context from note "${activeFile.basename}":\n\n${activeContent}\n\n---\n\n`;
+            contextBlock += `[CURRENT ACTIVE FILE: ${activeFile.basename}]\n${activeContent}\n[END OF ACTIVE FILE]\n\n`;
         }
 
         // Add vault browsing context if enabled
         if (this.plugin.settings.enableVaultBrowse) {
             const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt);
             if (vaultContext) {
-                fullPrompt += vaultContext;
+                contextBlock += `[VAULT CONTEXT (Related Files)]\n${vaultContext}\n[END OF VAULT CONTEXT]\n\n`;
             }
         }
         
-        fullPrompt += userPrompt;
-        return fullPrompt;
+        if (contextBlock.trim()) {
+            return `Here is the provided context from my Obsidian vault:\n\n${contextBlock}\n\nMy Query: ${userPrompt}`;
+        }
+        
+        return userPrompt;
     }
 
     async buildVaultBrowseContext(activeFile, activeContent, userPrompt) {
@@ -1335,6 +1350,18 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         });
     }
 
+    scrollToBottom() {
+        if (!this.outputElement) return;
+        // Wait for DOM to reflow before scrolling
+        requestAnimationFrame(() => {
+            if (this.outputElement) this.outputElement.scrollTop = this.outputElement.scrollHeight;
+            // Markdown rendering sometimes needs an extra tick
+            setTimeout(() => {
+                if (this.outputElement) this.outputElement.scrollTop = this.outputElement.scrollHeight;
+            }, 50);
+        });
+    }
+
     async renderMessage(role, content) {
         const messageDiv = this.outputElement.createDiv(`ollama-message ollama-${role}`);
         const bubble = messageDiv.createDiv('ollama-bubble');
@@ -1359,7 +1386,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             contentDiv.setText(content);
         }
         
-        this.outputElement.scrollTop = this.outputElement.scrollHeight;
+        this.scrollToBottom();
     }
 
     interruptGeneration() {
@@ -1372,6 +1399,11 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     async onClose() {
         // Stop automatic status checking
         this.stopStatusChecking();
+
+        // Unregister leaf change listener
+        if (this._leafChangeRef) {
+            this.app.workspace.offref(this._leafChangeRef);
+        }
         
         // Cancel any pending requests
         if (this.abortController) {
