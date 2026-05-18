@@ -700,7 +700,17 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
 
         try {
             const selectedModel = this.modelSelect.value || this.plugin.settings.defaultModel;
-            const response = await this.callOllamaStreaming(message, selectedModel, contentDiv);
+            
+            let aiSearchQueries = [];
+            if (this.plugin.settings.enableVaultBrowse) {
+                contentDiv.setText('Thinking & searching vault...');
+                contentDiv.addClass('ollama-searching-state');
+                aiSearchQueries = await this.generateSearchQueries(message, selectedModel, this.plugin.settings.vaultStructure);
+                contentDiv.empty();
+                contentDiv.removeClass('ollama-searching-state');
+            }
+            
+            const response = await this.callOllamaStreaming(message, selectedModel, contentDiv, aiSearchQueries);
             this.messages.push({ role: 'assistant', content: response });
 
             // Fire-and-forget: update memory in background so input re-enables immediately
@@ -744,11 +754,11 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         }
     }
 
-    async callOllamaStreaming(prompt, model, contentDiv) {
+    async callOllamaStreaming(prompt, model, contentDiv, aiSearchQueries = []) {
         const ollamaUrl = this.plugin.settings.ollamaUrl;
         
         // Build prompt with context
-        const fullPrompt = await this.buildPrompt(prompt);
+        const fullPrompt = await this.buildPrompt(prompt, aiSearchQueries);
         
         // Build options - only include num_predict if it's a positive value
         const options = {
@@ -829,7 +839,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         return fullResponse;
     }
 
-    async buildPrompt(userPrompt) {
+    async buildPrompt(userPrompt, aiSearchQueries = []) {
         let contextBlock = '';
         
         // Add custom instructions if provided
@@ -872,7 +882,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
             if (this.plugin.settings.enableChatMemory) {
                 recentTurnsContext = this.buildRecentTurnsContext(userPrompt);
             }
-            const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext);
+            const vaultContext = await this.buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext, aiSearchQueries);
             if (vaultContext) {
                 contextBlock += `[VAULT CONTEXT (Related Files)]\n${vaultContext}\n[END OF VAULT CONTEXT]\n\n`;
             }
@@ -885,7 +895,7 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         return userPrompt;
     }
 
-    async buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext = '') {
+    async buildVaultBrowseContext(activeFile, activeContent, userPrompt, recentTurnsContext = '', aiSearchQueries = []) {
         const contextParts = [];
         const excludedPaths = new Set();
 
@@ -940,6 +950,15 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
         ].join(' ');
 
         const searchTokens = this.extractSearchTokens(tokenSource);
+
+        // Add the AI's search queries directly
+        if (aiSearchQueries && aiSearchQueries.length > 0) {
+            for (const query of aiSearchQueries) {
+                if (query && typeof query === 'string' && query.trim().length > 0) {
+                    searchTokens.push(query.trim());
+                }
+            }
+        }
 
         const relatedFiles = this.findRelatedFiles(activeFile, searchTokens, excludedPaths);
 
@@ -1074,19 +1093,89 @@ vaultBrowse: ${this.plugin.settings.enableVaultBrowse ? 'true' : 'false'}`;
     extractSearchTokens(sourceText) {
         if (!sourceText) return [];
 
-        const matches = sourceText.toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+        const lowerSource = sourceText.toLowerCase();
+        const matches = lowerSource.match(/[a-z0-9\-_]{3,}/g) || [];
         const tokens = [];
         const seen = new Set();
+        
+        // Smart Date Injection for daily notes
+        const now = new Date();
+        const injectDateFormats = (dateObj) => {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            const formats = [`${y}-${m}-${d}`, `${y}${m}${d}`, `${y}_${m}_${d}`];
+            for (const format of formats) {
+                if (!seen.has(format)) {
+                    seen.add(format);
+                    tokens.push(format);
+                }
+            }
+        };
+
+        if (lowerSource.includes('today') || lowerSource.includes('daily note') || lowerSource.includes('daily recap')) {
+            injectDateFormats(now);
+        }
+        if (lowerSource.includes('yesterday')) {
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            injectDateFormats(yesterday);
+        }
 
         for (const word of matches) {
             if (tokens.length >= VAULT_BROWSE_MAX_TOKENS) break;
-            if (VAULT_BROWSE_STOPWORDS.has(word)) continue;
-            if (seen.has(word)) continue;
-            seen.add(word);
-            tokens.push(word);
+            
+            // Clean punctuation from edges
+            const cleanWord = word.replace(/^[-_]+|[-_]+$/g, '');
+            if (cleanWord.length < 3) continue;
+            
+            if (VAULT_BROWSE_STOPWORDS.has(cleanWord)) continue;
+            if (seen.has(cleanWord)) continue;
+            seen.add(cleanWord);
+            tokens.push(cleanWord);
         }
 
         return tokens;
+    }
+
+    async generateSearchQueries(userPrompt, model, vaultStructure) {
+        if (!this.plugin.settings.enableVaultBrowse) return [];
+
+        const systemPrompt = `You are an internal search query generator for an Obsidian vault.
+The user is asking a question. To help answer it, you must decide which files to search for.
+Vault Structure Overview:
+${vaultStructure || 'Not provided'}
+
+Identify up to 3 specific file names or exact search phrases you want to look up based on the user's query.
+Return ONLY a JSON array of strings. Do not include markdown formatting or explanations.
+User Query: "${userPrompt}"
+Example response: ["Project Proposal", "daily note"]`;
+
+        try {
+            const response = await fetch(`${this.plugin.settings.ollamaUrl}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: model,
+                    prompt: systemPrompt,
+                    stream: false,
+                    options: { temperature: 0.1, num_predict: 50 }
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const text = data.response.trim();
+                const match = text.match(/\[.*\]/s);
+                if (match) {
+                    const queries = JSON.parse(match[0]);
+                    return Array.isArray(queries) ? queries : [];
+                }
+            }
+        } catch (e) {
+            console.error('Failed to generate search queries', e);
+        }
+        return [];
     }
 
     findRelatedFiles(activeFile, searchTokens, excludedPaths) {
