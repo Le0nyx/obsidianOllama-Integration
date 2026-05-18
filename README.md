@@ -5,7 +5,6 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 ## Features
 
 - 💬 **Side Panel Chat** — Chat with Ollama without leaving your notes
-- 🚀 **Auto-Start Ollama** — Starts Ollama service automatically if not running
 - 📝 **Note Context** — Automatically includes active note content as context
 - 🔎 **Vault Browse** — Pulls relative file lists plus linked and related note excerpts
 - 🧠 **Chat Memory** — Keeps a rolling summary and recent turns for better recall
@@ -23,14 +22,14 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 ## Usage
 
 1. Click the brain icon in the ribbon (or run command "Open Ollama Chat")
-2. Click "Start Ollama" if the service isn't running
+2. Start Ollama on your machine (if using it locally)
 3. Type your message and press **Enter** to send
 4. Use **Shift+Enter** for multi-line input
 5. Toggle **Vault Browse** to include related notes automatically
 6. Enable **Chat Memory** to keep a rolling summary per chat
 
 
-![Ollama Sidechat in Obsidian](./assets/sidechat.png)
+<img src="./assets/sidechat.png" alt="Ollama Sidechat in Obsidian" width="500"/>
 
 ## Settings
 
@@ -51,10 +50,9 @@ A side panel chat interface for [Ollama](https://ollama.ai/) in Obsidian. Chat w
 When Vault Browse is enabled, the plugin scans note metadata and excerpts to find related notes even if they are not explicitly linked.
 Chat Memory stores the rolling summary as a hidden block inside each chat file so it can be reloaded later.
 
+<img src="./assets/settings1.png" alt="Settings Page 1" width="500"/>
 
-![Settings Page1](./assets/settings1.png)
-
-![Settings Page2](./assets/settings2.png)
+<img src="./assets/settings2.png" alt="Settings Page 2" width="500"/>
 
 ## Chat History
 
