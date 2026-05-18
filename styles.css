@@ -687,11 +687,6 @@
     stroke-linejoin: round;
 }
 
-/* --- Open-in-tab button ------------------------------------ */
-.ollama-open-tab-button {
-    /* Uses .ollama-icon-btn base */
-}
-
 /* --- Streaming indicator ----------------------------------- */
 .ollama-streaming-cursor::after {
     content: '▍';
