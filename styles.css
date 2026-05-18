@@ -39,7 +39,7 @@
 /* --- Keyframes --------------------------------------------- */
 @keyframes oc-fade-in {
     from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+    to   { opacity: 1; transform: none; }
 }
 
 @keyframes oc-pulse-ring {
@@ -87,6 +87,8 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     flex-shrink: 0;
+    position: relative;
+    z-index: 100;
 }
 
 .ollama-header-left h3 {
@@ -178,17 +180,26 @@
 .ollama-chat-list {
     position: absolute;
     top: calc(100% + 4px);
-    left: 0;
     right: 0;
-    min-width: 220px;
-    max-height: 320px;
+    left: auto;
+    min-width: 320px;
+    max-width: 400px;
+    max-height: 400px;
     overflow-y: auto;
-    background: var(--oc-surface-1);
+    
+    /* Ensure completely opaque background to block text */
+    background-color: #1e1e1e;
+    background-image: linear-gradient(var(--background-primary), var(--background-primary));
+    
     border: 1px solid var(--oc-surface-2);
     border-radius: var(--oc-radius-md);
-    box-shadow: var(--oc-shadow-lg);
-    z-index: 120;
+    box-shadow: var(--oc-shadow-lg), 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 99999;
     animation: oc-fade-in var(--oc-transition-fast);
+}
+
+.theme-light .ollama-chat-list {
+    background-color: #ffffff;
 }
 
 .ollama-chat-item {
@@ -196,9 +207,13 @@
     cursor: pointer;
     font-size: 0.82em;
     border-bottom: 1px solid var(--oc-surface-glass-border);
-    white-space: nowrap;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.4;
     transition: background var(--oc-transition-fast);
 }
 
@@ -448,15 +463,13 @@
 .ollama-bubble {
     padding: 10px 14px;
     position: relative;
+    display: grid;
+    grid-template-columns: 1fr auto;
 }
 
 /* Message header (role label + copy btn) */
 .ollama-message-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 4px;
-    gap: 8px;
+    display: contents;
 }
 
 .ollama-role {
@@ -465,6 +478,10 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     opacity: 0.7;
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    align-self: center;
+    margin-bottom: 4px;
 }
 
 /* --- Copy button — always visible, subtle ------------------ */
@@ -476,14 +493,29 @@
     padding: 3px 8px;
     font-size: 0.72em;
     font-weight: 600;
-    background: transparent;
-    border: 1px solid var(--oc-surface-2);
     border-radius: var(--oc-radius-sm);
-    color: var(--oc-text-muted);
     cursor: pointer;
     opacity: 0.8;
     transition: opacity var(--oc-transition-fast), background var(--oc-transition-fast), transform var(--oc-transition-fast);
-    flex-shrink: 0;
+    
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    align-self: start;
+    position: sticky;
+    top: 2px;
+    z-index: 10;
+    margin-left: 8px;
+    
+    background: var(--oc-surface-0);
+    border: 1px solid var(--oc-surface-2);
+    color: var(--oc-text-muted);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.ollama-message.ollama-user .ollama-copy-button {
+    background: hsla(var(--oc-accent-h), var(--oc-accent-s), 15%, 0.85);
+    border-color: hsla(var(--oc-accent-h), var(--oc-accent-s), var(--oc-accent-l), 0.3);
 }
 
 .ollama-copy-button:hover {
@@ -520,6 +552,8 @@
 
 /* --- Message content --------------------------------------- */
 .ollama-content {
+    grid-column: 1 / 3;
+    grid-row: 2 / 3;
     display: block;
     white-space: pre-wrap;
     word-wrap: break-word;
